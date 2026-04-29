@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#7C4A2D">
+<title>🥐 PuffStick Order</title>
+<link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root {
+  --cream:#FDF6EE;--cream2:#F9EDD8;
+  --gold:#C8941A;--gold-light:#F0C040;
+  --brown:#7C4A2D;--brown-dark:#4E2B18;--brown-mid:#A0603A;
+  --green:#2E7D32;--red:#C62828;--blue:#1565C0;--orange:#E65100;
+  --gray:#6D5A4E;--gray-light:#C4B5A8;
+  --light:#F5EDE4;--white:#FFFFFF;--border:#E2D0BE;
+  --shadow-sm:0 1px 4px rgba(78,43,24,.10);
+  --shadow:0 3px 14px rgba(78,43,24,.14);
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html{scroll-behavior:smooth}
+body{font-family:'Sarabun',sans-serif;background:var(--cream);color:var(--brown-dark);min-height:100vh;max-width:480px;margin:0 auto;overflow-x:hidden}
+.page{display:none;min-height:100vh;flex-direction:column}
+.page.active{display:flex}
+.hdr{background:var(--brown);color:#fff;padding:13px 16px;display:flex;align-items:center;gap:10px;position:sticky;top:0;z-index:100;box-shadow:var(--shadow)}
+.hdr-title{font-size:17px;font-weight:700;flex:1}
+.hdr-sub{font-size:12px;opacity:.75;margin-top:2px}
+.btn-back{background:rgba(255,255,255,.15);border:none;color:#fff;font-size:18px;cursor:pointer;padding:6px 10px;border-radius:8px;line-height:1}
+.btn-back:active{background:rgba(255,255,255,.25)}
+.scroll-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 16px}
+.card{background:#fff;border-radius:14px;padding:14px;margin-bottom:12px;box-shadow:var(--shadow-sm);border:1px solid var(--border)}
+.card-title{font-size:12px;font-weight:700;color:var(--brown);margin-bottom:11px;display:flex;align-items:center;gap:6px;text-transform:uppercase;letter-spacing:.04em}
+.btn{display:block;width:100%;padding:13px 18px;border:none;border-radius:11px;font-family:'Sarabun',sans-serif;font-size:15px;font-weight:600;cursor:pointer;transition:transform .15s,opacity .15s;text-align:center;line-height:1.3}
+.btn:active{transform:scale(.97);opacity:.9}
+.btn-primary{background:var(--brown);color:#fff}
+.btn-success{background:var(--green);color:#fff}
+.btn-outline{background:transparent;border:2px solid var(--brown);color:var(--brown)}
+.btn-ghost{background:var(--light);color:var(--gray)}
+.btn-danger{background:var(--red);color:#fff}
+.btn-line{background:#06C755;color:#fff;display:flex;align-items:center;justify-content:center;gap:8px}
+.btn-sm{padding:7px 13px;font-size:13px;border-radius:8px;width:auto;display:inline-block}
+.form-group{margin-bottom:11px}
+.form-label{font-size:12px;font-weight:700;color:var(--gray);margin-bottom:5px;display:block;text-transform:uppercase;letter-spacing:.03em}
+.form-input{width:100%;padding:11px 13px;border:1.5px solid var(--border);border-radius:9px;font-family:'Sarabun',sans-serif;font-size:15px;color:var(--brown-dark);background:#fff;transition:border-color .2s;appearance:none;-webkit-appearance:none}
+.form-input:focus{outline:none;border-color:var(--brown);background:#FFFAF5}
+textarea.form-input{resize:none;line-height:1.5}
+.filling-row{display:flex;align-items:center;padding:9px 0;border-bottom:1px solid var(--border);gap:10px}
+.filling-row:last-child{border-bottom:none}
+.filling-emoji{font-size:17px;width:24px;text-align:center;flex-shrink:0}
+.filling-name{flex:1;font-size:14px;font-weight:500;line-height:1.3}
+.qty-wrap{display:flex;align-items:center;border:1.5px solid var(--border);border-radius:9px;overflow:hidden;flex-shrink:0}
+.qty-btn{width:34px;height:38px;border:none;background:var(--light);color:var(--brown);font-size:18px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;user-select:none}
+.qty-btn:active{background:var(--cream2)}
+.qty-input{width:52px;height:38px;border:none;border-left:1px solid var(--border);border-right:1px solid var(--border);text-align:center;font-family:'Sarabun',sans-serif;font-size:15px;font-weight:700;color:var(--brown-dark);background:#fff}
+.qty-input:focus{outline:none;background:#FFFAF5}
+.qty-input::-webkit-outer-spin-button,.qty-input::-webkit-inner-spin-button{-webkit-appearance:none}
+.sum-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sum-item{background:var(--light);border-radius:10px;padding:11px 10px;text-align:center;border:1px solid var(--border)}
+.sum-val{font-size:20px;font-weight:800;color:var(--brown)}
+.sum-lbl{font-size:11px;color:var(--gray);margin-top:3px;font-weight:500}
+.prog-wrap{background:var(--light);border-radius:100px;height:10px;overflow:hidden}
+.prog-bar{height:100%;background:linear-gradient(90deg,var(--gold-light),var(--gold));border-radius:100px;transition:width .6s cubic-bezier(.4,0,.2,1)}
+.alert{padding:11px 13px;border-radius:9px;font-size:13px;margin-bottom:10px;line-height:1.5}
+.alert-info{background:#E8F0FE;color:#1A56A0;border-left:3px solid #4285F4}
+.alert-success{background:#E6F4EA;color:#1E5C29;border-left:3px solid #34A853}
+.alert-warning{background:#FEF7E0;color:#7A4100;border-left:3px solid #FBBC04}
+.alert-danger{background:#FCE8E6;color:#8B1A1A;border-left:3px solid #EA4335}
+.badge{display:inline-block;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700}
+.badge-gold{background:var(--gold);color:#fff}
+.badge-green{background:var(--green);color:#fff}
+.badge-gray{background:var(--gray-light);color:var(--brown-dark)}
+.badge-blue{background:var(--blue);color:#fff}
+.badge-orange{background:var(--orange);color:#fff}
+.order-text{background:#1C1C28;color:#E8E0D0;font-family:'Courier New',monospace;font-size:13px;line-height:1.9;padding:14px;border-radius:10px;white-space:pre-wrap;word-break:break-word}
+.land-hero{background:linear-gradient(160deg,var(--brown-mid) 0%,var(--brown-dark) 100%);padding:44px 24px 32px;text-align:center;color:#fff;position:relative;overflow:hidden}
+.land-hero::before{content:'';position:absolute;inset:0;background:url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23ffffff' fill-opacity='0.04'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/svg%3E")}
+.land-logo{font-size:60px;margin-bottom:10px;position:relative}
+.land-title{font-size:24px;font-weight:800;margin-bottom:6px;position:relative}
+.land-sub{font-size:13px;opacity:.75;position:relative}
+.pin-row{display:flex;gap:10px;justify-content:center;margin:18px 0}
+.pin-digit{width:54px;height:58px;border:2px solid var(--border);border-radius:10px;text-align:center;font-size:22px;font-weight:800;color:var(--brown);background:#fff;font-family:'Sarabun',sans-serif;transition:border-color .2s;-moz-appearance:textfield}
+.pin-digit::-webkit-outer-spin-button,.pin-digit::-webkit-inner-spin-button{-webkit-appearance:none}
+.pin-digit:focus{border-color:var(--brown);outline:none;background:#FFFAF5}
+.pay-chips{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px}
+.pay-chip{padding:10px 8px;border-radius:9px;border:2px solid var(--border);text-align:center;cursor:pointer;font-size:13px;font-weight:600;color:var(--gray);transition:all .2s;line-height:1.3;background:#fff}
+.pay-chip.sel-paid{border-color:var(--green);background:#E6F4EA;color:var(--green)}
+.pay-chip.sel-pending{border-color:var(--orange);background:#FFF3E0;color:var(--orange)}
+.pay-chip.sel-partial{border-color:var(--blue);background:#E8F0FE;color:var(--blue)}
+.pay-chip.sel-after{border-color:var(--gray);background:var(--light);color:var(--gray)}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:300;justify-content:center;align-items:flex-end}
+.modal-bg.open{display:flex}
+.modal-box{background:#fff;width:100%;max-width:480px;border-radius:18px 18px 0 0;padding:20px 18px 28px;max-height:85vh;overflow-y:auto}
+.modal-title{font-size:16px;font-weight:700;margin-bottom:14px;color:var(--brown-dark)}
+.ord-item{background:#fff;border-radius:11px;padding:12px;margin-bottom:8px;border:1px solid var(--border);box-shadow:var(--shadow-sm);cursor:pointer;transition:border-color .2s}
+.ord-item:active{border-color:var(--brown)}
+.ord-lot{font-weight:700;font-size:14px;color:var(--brown)}
+.disc-banner{background:linear-gradient(135deg,#F9D423,#F0A500);color:var(--brown-dark);padding:11px 14px;border-radius:10px;text-align:center;font-weight:700;margin-bottom:10px;font-size:14px}
+.sticky-foot{position:sticky;bottom:0;background:var(--cream);padding:10px 16px 14px;border-top:1px solid var(--border)}
+.success-wrap{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 24px;text-align:center}
+.menu-row{background:#fff;border-radius:11px;padding:14px;margin-bottom:8px;border:1px solid var(--border);cursor:pointer;display:flex;justify-content:space-between;align-items:center;box-shadow:var(--shadow-sm)}
+.menu-row:active{border-color:var(--brown)}
+.menu-row-text .title{font-weight:700;font-size:15px;margin-bottom:3px}
+.menu-row-text .sub{font-size:12px;color:var(--gray)}
+.chevron{font-size:20px;color:var(--gray-light)}
+.flex-between{display:flex;justify-content:space-between;align-items:center}
+.mt-8{margin-top:8px}.mt-10{margin-top:10px}.mt-12{margin-top:12px}
+.mb-8{margin-bottom:8px}.mb-10{margin-bottom:10px}
+.text-sm{font-size:13px}.text-xs{font-size:11px}
+.text-gray{color:var(--gray)}.text-brown{color:var(--brown)}
+.text-bold{font-weight:700}.text-center{text-align:center}
+.divider{height:1px;background:var(--border);margin:10px 0}
+.grid-2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.content{flex:1;padding:14px 16px;overflow-y:auto}
+</style>
+</head>
+<body>
+
+<!-- LANDING -->
+<div id="page-landing" class="page active">
+  <div class="land-hero">
+    <div class="land-logo">🥐</div>
+    <div class="land-title">PuffStick Order</div>
+    <div class="land-sub">ระบบสั่งขนมพัฟสติ๊ก คุณต๋อย — แฟรนไชส์</div>
+  </div>
+  <div class="content" style="padding-top:28px;">
+    <button class="btn btn-primary" style="margin-bottom:10px;font-size:16px;" onclick="goPage('page-branch-login')">🏪 &nbsp;สาขาแฟรนไชส์ — สั่งขนม</button>
+    <button class="btn btn-outline" onclick="goPage('page-admin-login')">🔐 &nbsp;แอดมิน — จัดการระบบ</button>
+    <div class="text-center text-xs text-gray" style="margin-top:24px;line-height:1.7;">
+      PuffStick Order System v2.0<br>พัฒนาสำหรับระบบแฟรนไชส์ภายใน
+    </div>
+  </div>
+</div>
+
+<!-- BRANCH LOGIN -->
+<div id="page-branch-login" class="page">
+  <div class="hdr">
+    <button class="btn-back" onclick="goPage('page-landing')">←</button>
+    <div><div class="hdr-title">เข้าสู่ระบบสาขา</div><div class="hdr-sub">กรอก PIN 4 หลักของสาขา</div></div>
+  </div>
+  <div class="content">
+    <div class="card">
+      <div class="card-title">🔑 PIN สาขา</div>
+      <div id="bl-error" class="alert alert-danger" style="display:none;"></div>
+      <div class="pin-row">
+        <input class="pin-digit" type="number" inputmode="numeric" id="p0" maxlength="1" oninput="pinStep(this,0)">
+        <input class="pin-digit" type="number" inputmode="numeric" id="p1" maxlength="1" oninput="pinStep(this,1)">
+        <input class="pin-digit" type="number" inputmode="numeric" id="p2" maxlength="1" oninput="pinStep(this,2)">
+        <input class="pin-digit" type="number" inputmode="numeric" id="p3" maxlength="1" oninput="pinStep(this,3)">
+      </div>
+      <button class="btn btn-primary" onclick="doLoginBranch()">เข้าสู่ระบบ →</button>
+    </div>
+    <div class="alert alert-info text-sm">📌 รับ PIN จากผู้ประสานงานหลัก</div>
+  </div>
+</div>
+
+<!-- ORDER FORM -->
+<div id="page-order" class="page">
+  <div class="hdr">
+    <button class="btn-back" onclick="confirmLogout()">←</button>
+    <div style="flex:1;"><div class="hdr-title" id="o-branch-name">สาขา...</div><div class="hdr-sub" id="o-lot-info">กำลังโหลด...</div></div>
+    <div id="o-disc-badge" style="display:none;"><span class="badge badge-gold">💰 ส่วนลด 10%</span></div>
+  </div>
+  <div class="scroll-body">
+    <div class="card" style="padding:12px 14px;">
+      <div class="flex-between mb-8">
+        <span style="font-size:13px;font-weight:700;">🎯 ยอดสะสมเดือนนี้</span>
+        <span class="text-sm text-bold text-brown" id="accum-txt">0 / 4,500 ชิ้น</span>
+      </div>
+      <div class="prog-wrap"><div class="prog-bar" id="accum-bar" style="width:0%"></div></div>
+      <div class="text-sm text-gray mt-8" id="accum-note">สะสมครบ 4,500 ชิ้น รับส่วนลด 10% ลอตถัดไป</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📅 วันที่ต้องการรับขนม</div>
+      <input type="date" class="form-input" id="del-date" onchange="checkDate()">
+      <div id="date-warn" class="alert alert-warning mt-8" style="display:none;">⚠️ ควรสั่งล่วงหน้าอย่างน้อย 1 วัน</div>
+      <div id="date-ok" class="alert alert-success mt-8" style="display:none;">✅ สั่งล่วงหน้า <strong id="days-num"></strong> วัน</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🥐 จำนวนแต่ละไส้</div>
+      <div id="filling-list"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🌶️ ปาปริก้าพิเศษ (นอกเหนือจากที่คำนวณให้)</div>
+      <div class="alert alert-warning text-sm mb-10">ปาปริก้าเพิ่มเติมจากส่วนที่ระบบคำนวณ — ทางผู้ประสานงานจะแจ้งราคากลับ</div>
+      <div class="filling-row" style="border:none;padding:4px 0;">
+        <span class="filling-name text-sm">ปาปริก้าพิเศษ (กก.)</span>
+        <div class="qty-wrap">
+          <button class="qty-btn" onclick="adjExtraPap(-0.5)">−</button>
+          <input class="qty-input" type="number" id="extra-pap" value="0" min="0" step="0.5" inputmode="decimal" onchange="snapExtraPap(this)" style="width:60px;">
+          <button class="qty-btn" onclick="adjExtraPap(0.5)">+</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">💳 สถานะการชำระเงิน</div>
+      <div class="pay-chips">
+        <div class="pay-chip" id="pc-paid"    onclick="selPay('paid')">✅ ชำระแล้ว</div>
+        <div class="pay-chip" id="pc-pending" onclick="selPay('pending')">⏳ รอชำระ</div>
+        <div class="pay-chip" id="pc-partial" onclick="selPay('partial')">🔄 แบ่งชำระ</div>
+        <div class="pay-chip" id="pc-after"   onclick="selPay('after')">📅 ชำระหลังรับ 1 วัน</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📊 สรุปออเดอร์</div>
+      <div class="sum-grid">
+        <div class="sum-item"><div class="sum-val" id="s-total">0</div><div class="sum-lbl">รวม (ชิ้น)</div></div>
+        <div class="sum-item"><div class="sum-val" id="s-price">0</div><div class="sum-lbl">ยอดรวม (บาท)</div></div>
+        <div class="sum-item"><div class="sum-val" id="s-pap">—</div><div class="sum-lbl">ปาปริก้า (กก.)</div></div>
+        <div class="sum-item"><div class="sum-val" id="s-ice">0</div><div class="sum-lbl">น้ำแข็งแห้ง (กก.)</div></div>
+      </div>
+      <div class="divider"></div>
+      <div class="flex-between text-sm mb-8"><span class="text-gray">กล่องโฟม</span><span class="text-bold" id="s-boxes">0 ใบ</span></div>
+      <div class="flex-between text-sm"><span class="text-gray">ซองบรรจุ</span><span class="text-bold" id="s-bags">ตามจำนวน</span></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📝 หมายเหตุ</div>
+      <textarea class="form-input" id="o-notes" rows="3" placeholder="หมายเหตุเพิ่มเติม (ถ้ามี)..."></textarea>
+    </div>
+    <div style="height:72px;"></div>
+  </div>
+  <div class="sticky-foot">
+    <button class="btn btn-primary" onclick="doPreview()">ดูตัวอย่างออเดอร์ →</button>
+  </div>
+</div>
+
+<!-- PREVIEW -->
+<div id="page-preview" class="page">
+  <div class="hdr">
+    <button class="btn-back" onclick="goPage('page-order')">←</button>
+    <div><div class="hdr-title">ตรวจสอบออเดอร์</div><div class="hdr-sub">ตรวจสอบก่อนยืนยัน</div></div>
+  </div>
+  <div class="content">
+    <div id="preview-disc-banner" class="disc-banner" style="display:none;">🎉 ออเดอร์นี้ได้รับส่วนลด 10%!</div>
+    <div class="card">
+      <div class="card-title">📋 ข้อความออเดอร์</div>
+      <div class="order-text" id="prev-text"></div>
+      <button class="btn btn-ghost mt-10" style="font-size:13px;" onclick="doCopy()">📋 คัดลอกข้อความ</button>
+    </div>
+    <div class="card">
+      <div class="card-title">📬 ส่งออเดอร์</div>
+      <div class="alert alert-info text-sm mb-10">
+        ✈️ <strong>Telegram จะส่งอัตโนมัติ</strong>เมื่อกด "ยืนยันและบันทึกออเดอร์" — ไม่ต้องไปแชร์ในไลน์ซ้ำ<br>
+        🟢 ปุ่มแชร์ LINE ด้านล่างสำหรับกรณีต้องการ forward เพิ่มเติม
+      </div>
+      <button class="btn btn-line mb-8" onclick="doShareLine()">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M19.952 10.557C19.952 6.353 15.766 2.95 10.635 2.95 5.504 2.95 1.317 6.353 1.317 10.557c0 3.784 3.354 6.947 7.882 7.544.307.066.724.203.83.465.094.238.062.61.03.85l-.134.804c-.04.238-.19.934.82.509 1.009-.425 5.46-3.215 7.449-5.51 1.372-1.506 2.028-3.03 2.028-4.662"/></svg>
+        แชร์ผ่าน LINE (ทางเลือก)
+      </button>
+      <div id="tg-btn-wrap" style="display:none;margin-bottom:8px;">
+        <button class="btn btn-ghost btn-sm" style="font-size:12px;" onclick="doSendTelegram()">🔄 ส่ง Telegram ทันที (ทดสอบ)</button>
+      </div>
+      <div id="send-status" style="display:none;"></div>
+    </div>
+    <button class="btn btn-success" onclick="doConfirmOrder()">✅ ยืนยันและบันทึกออเดอร์</button>
+    <button class="btn btn-ghost mt-10" onclick="goPage('page-order')">← แก้ไขออเดอร์</button>
+  </div>
+</div>
+
+<!-- SUCCESS -->
+<div id="page-success" class="page">
+  <div class="success-wrap">
+    <div style="font-size:72px;margin-bottom:16px;">🎉</div>
+    <div style="font-size:22px;font-weight:800;color:var(--brown);margin-bottom:8px;">บันทึกออเดอร์สำเร็จ!</div>
+    <div style="font-size:15px;color:var(--gray);margin-bottom:6px;" id="suc-lot"></div>
+    <div style="font-size:13px;color:var(--gray);margin-bottom:16px;" id="suc-detail"></div>
+    <div id="suc-tg-status" class="alert" style="display:none;width:100%;max-width:340px;margin-bottom:14px;text-align:left;"></div>
+    <div id="suc-disc" class="disc-banner" style="display:none;width:100%;margin-bottom:20px;max-width:320px;">🌟 ยอดสะสมผ่าน 4,500 ชิ้นแล้ว!<br>ลอตถัดไปได้ส่วนลด 10%</div>
+    <button class="btn btn-primary" style="max-width:280px;" onclick="doNewOrder()">🛒 สั่งออเดอร์ใหม่</button>
+    <button class="btn btn-ghost mt-10" style="max-width:280px;" onclick="confirmLogout()">ออกจากระบบ</button>
+  </div>
+</div>
+
+<!-- ADMIN LOGIN -->
+<div id="page-admin-login" class="page">
+  <div class="hdr"><button class="btn-back" onclick="goPage('page-landing')">←</button><div class="hdr-title">Admin Login</div></div>
+  <div class="content">
+    <div class="card">
+      <div class="card-title">🔐 รหัสผ่านแอดมิน</div>
+      <div id="al-error" class="alert alert-danger" style="display:none;"></div>
+      <div class="form-group"><input type="password" class="form-input" id="adm-pw" placeholder="รหัสผ่าน..." onkeydown="if(event.key==='Enter')doLoginAdmin()"></div>
+      <button class="btn btn-primary" onclick="doLoginAdmin()">เข้าสู่ระบบ</button>
+    </div>
+    <div class="alert alert-info text-sm">รหัสผ่านเริ่มต้น: <strong>admin1234</strong></div>
+  </div>
+</div>
+
+<!-- ADMIN DASHBOARD -->
+<div id="page-admin" class="page">
+  <div class="hdr">
+    <div style="flex:1;"><div class="hdr-title">🎛️ Admin Dashboard</div><div class="hdr-sub" id="adm-month-label">เดือนนี้</div></div>
+    <button class="btn-back" onclick="doLogoutAdmin()" style="font-size:13px;padding:6px 10px;">ออก</button>
+  </div>
+  <div class="content">
+    <div class="sum-grid mb-10">
+      <div class="sum-item"><div class="sum-val" id="adm-stat-orders">—</div><div class="sum-lbl">ออเดอร์เดือนนี้</div></div>
+      <div class="sum-item"><div class="sum-val" id="adm-stat-pieces">—</div><div class="sum-lbl">ชิ้นเดือนนี้</div></div>
+      <div class="sum-item"><div class="sum-val" id="adm-stat-revenue">—</div><div class="sum-lbl">ยอดรวม (บาท)</div></div>
+      <div class="sum-item"><div class="sum-val" id="adm-stat-pending">—</div><div class="sum-lbl">รอชำระ</div></div>
+    </div>
+    <div class="menu-row" onclick="openAdminTab('branches')"><div class="menu-row-text"><div class="title">🏪 จัดการสาขา</div><div class="sub">เพิ่ม/แก้ไขสาขา, PIN, เลข Lot</div></div><span class="chevron">›</span></div>
+    <div class="menu-row" onclick="openAdminTab('history')"><div class="menu-row-text"><div class="title">📋 ประวัติออเดอร์</div><div class="sub">ดูออเดอร์, อัปเดตสถานะ, export CSV</div></div><span class="chevron">›</span></div>
+    <div class="menu-row" onclick="openAdminTab('accum')"><div class="menu-row-text"><div class="title">🎯 ยอดสะสม &amp; ส่วนลด</div><div class="sub">ติดตามยอดสะสมแต่ละสาขา</div></div><span class="chevron">›</span></div>
+    <div class="menu-row" onclick="openAdminTab('settings')"><div class="menu-row-text"><div class="title">⚙️ ตั้งค่าระบบ</div><div class="sub">LINE, Telegram, Firebase, รหัสผ่าน</div></div><span class="chevron">›</span></div>
+  </div>
+</div>
+
+<!-- ADMIN: BRANCHES -->
+<div id="page-adm-branches" class="page">
+  <div class="hdr">
+    <button class="btn-back" onclick="goPage('page-admin')">←</button>
+    <div class="hdr-title" style="flex:1;">🏪 สาขาทั้งหมด</div>
+    <button class="btn-back" style="font-size:22px;padding:4px 10px;" onclick="showAddBranch()">＋</button>
+  </div>
+  <div class="scroll-body" id="branches-list"></div>
+</div>
+
+<!-- ADMIN: HISTORY -->
+<div id="page-adm-history" class="page">
+  <div class="hdr">
+    <button class="btn-back" onclick="goPage('page-admin')">←</button>
+    <div class="hdr-title" style="flex:1;">📋 ประวัติออเดอร์</div>
+    <button class="btn-back" style="font-size:13px;padding:6px 10px;" onclick="exportCSV()">📥 CSV</button>
+  </div>
+  <div class="scroll-body">
+    <div style="display:flex;gap:8px;margin-bottom:10px;">
+      <select class="form-input" id="hist-filter-br" style="flex:1;" onchange="loadHistory()"><option value="">— ทุกสาขา —</option></select>
+      <select class="form-input" id="hist-filter-pay" style="flex:1;" onchange="loadHistory()">
+        <option value="">— ทุกสถานะ —</option>
+        <option value="paid">ชำระแล้ว</option>
+        <option value="pending">รอชำระ</option>
+        <option value="partial">แบ่งชำระ</option>
+        <option value="after">ชำระหลังรับ</option>
+      </select>
+    </div>
+    <div id="hist-list"></div>
+  </div>
+</div>
+
+<!-- ADMIN: ACCUM -->
+<div id="page-adm-accum" class="page">
+  <div class="hdr"><button class="btn-back" onclick="goPage('page-admin')">←</button><div class="hdr-title">🎯 ยอดสะสมเดือนนี้</div></div>
+  <div class="scroll-body" id="accum-list-adm"></div>
+</div>
+
+<!-- ADMIN: SETTINGS -->
+<div id="page-adm-settings" class="page">
+  <div class="hdr"><button class="btn-back" onclick="goPage('page-admin')">←</button><div class="hdr-title">⚙️ ตั้งค่าระบบ</div></div>
+  <div class="scroll-body">
+    <div class="card">
+      <div class="card-title">🟢 LINE Share</div>
+      <div class="alert alert-success text-sm">✅ พร้อมใช้งานทันที — กดปุ่ม "แชร์ผ่าน LINE" ในหน้า Preview<br>LINE จะเปิดขึ้นพร้อมข้อความ พร้อมเลือกห้องส่งได้เลย ทั้ง iOS &amp; Android</div>
+    </div>
+    <div class="card">
+      <div class="card-title">✈️ Telegram Bot (สำรอง)</div>
+      <div class="form-group"><label class="form-label">Bot Token</label><input type="text" class="form-input" id="cfg-tg-token" placeholder="123456:ABCdef..."></div>
+      <div class="form-group"><label class="form-label">Chat ID</label><input type="text" class="form-input" id="cfg-tg-chat" placeholder="-1001234567890"></div>
+      <button class="btn btn-primary mb-8" onclick="saveTgSettings()">บันทึก Telegram</button>
+      <button class="btn btn-ghost btn-sm" onclick="testTelegram()">ทดสอบส่ง</button>
+    </div>
+    <div class="card">
+      <div class="card-title">🔥 Firebase Realtime Database</div>
+      <div class="alert alert-info text-sm mb-10">ใส่ URL ของ DB เพื่อ sync ออเดอร์ข้ามอุปกรณ์<br>ตั้ง Rules: <code style="background:#eee;padding:1px 4px;border-radius:3px;">".write": true, ".read": true</code> หรือใส่ Secret</div>
+      <div class="form-group"><label class="form-label">Database URL</label><input type="text" class="form-input" id="cfg-fb-url" placeholder="https://xxx-default-rtdb.asia-southeast1.firebasedatabase.app"></div>
+      <div class="form-group"><label class="form-label">Database Secret (ถ้าใช้ Rules แบบ private)</label><input type="password" class="form-input" id="cfg-fb-secret" placeholder="secret..."></div>
+      <div class="form-group"><label class="form-label">Path prefix (default: puffstick)</label><input type="text" class="form-input" id="cfg-fb-path" value="puffstick"></div>
+      <button class="btn btn-primary mb-8" onclick="saveFbSettings()">บันทึก Firebase</button>
+      <button class="btn btn-ghost btn-sm" onclick="testFirebase()">ทดสอบเชื่อมต่อ</button>
+    </div>
+    <div class="card">
+      <div class="card-title">🔒 เปลี่ยนรหัสผ่านแอดมิน</div>
+      <div class="form-group"><input type="password" class="form-input" id="cfg-new-pw" placeholder="รหัสผ่านใหม่ (อย่างน้อย 4 ตัว)"></div>
+      <button class="btn btn-outline" onclick="saveAdminPw()">บันทึกรหัสผ่าน</button>
+    </div>
+    <div class="card">
+      <div class="card-title">⚠️ Danger Zone</div>
+      <div class="alert alert-danger text-sm mb-10">ล้างข้อมูลไม่สามารถยกเลิกได้</div>
+      <button class="btn btn-danger btn-sm" onclick="clearAllData()">🗑 ล้างข้อมูลทั้งหมด</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: BRANCH -->
+<div class="modal-bg" id="modal-branch">
+  <div class="modal-box">
+    <div class="modal-title" id="mbr-title">เพิ่มสาขาใหม่</div>
+    <input type="hidden" id="mbr-id">
+    <div class="form-group"><label class="form-label">ชื่อสาขา</label><input type="text" class="form-input" id="mbr-name" placeholder="ชื่อสาขา"></div>
+    <div class="form-group"><label class="form-label">PIN (4 ตัวเลข)</label><input type="number" class="form-input" id="mbr-pin" inputmode="numeric" placeholder="1234"></div>
+    <div class="form-group"><label class="form-label">เลข Lot ปัจจุบัน</label><input type="number" class="form-input" id="mbr-lot" value="1" min="1"></div>
+    <div class="grid-2 mt-12">
+      <button class="btn btn-ghost" onclick="closeModal('modal-branch')">ยกเลิก</button>
+      <button class="btn btn-primary" onclick="saveBranch()">บันทึก</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: ORDER DETAIL -->
+<div class="modal-bg" id="modal-ord">
+  <div class="modal-box">
+    <div class="modal-title">รายละเอียดออเดอร์</div>
+    <div id="modal-ord-body"></div>
+    <div style="margin-top:12px;">
+      <div class="form-label">อัปเดตสถานะชำระ</div>
+      <div class="pay-chips">
+        <div class="pay-chip" id="mpc-paid"    onclick="updatePayStatus('paid')">✅ ชำระแล้ว</div>
+        <div class="pay-chip" id="mpc-pending" onclick="updatePayStatus('pending')">⏳ รอชำระ</div>
+        <div class="pay-chip" id="mpc-partial" onclick="updatePayStatus('partial')">🔄 แบ่งชำระ</div>
+        <div class="pay-chip" id="mpc-after"   onclick="updatePayStatus('after')">📅 ชำระหลังรับ 1 วัน</div>
+      </div>
+    </div>
+    <div class="grid-2 mt-12">
+      <button class="btn btn-ghost" onclick="closeModal('modal-ord')">ปิด</button>
+      <button class="btn btn-primary" onclick="copyModalOrd()">📋 คัดลอก</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ============================================================
+// CONSTANTS
+// ============================================================
+var FILLINGS = [
+  {id:'orig',   name:'ออริจินัล',       emoji:'⭐'},
+  {id:'ysea',   name:'ยำสาหร่าย',       emoji:'🌿'},
+  {id:'htuna',  name:'แฮมทูน่ามันบด',  emoji:'🐟'},
+  {id:'krab',   name:'ปูอัดอลาสก้า',    emoji:'🦀'},
+  {id:'cspicy', name:'ไก่สไปซ์ซี่',     emoji:'🌶️'},
+  {id:'croast', name:'ไก่หยองพริกเผา',  emoji:'🍗'},
+  {id:'ccurry', name:'ไก่ผัดผงกะหรี่',  emoji:'🟡'},
+  {id:'banana', name:'กล้วยแอลมอนด์',  emoji:'🍌'},
+  {id:'pine',   name:'สัปปะรด',         emoji:'🍍'},
+  {id:'corn',   name:'ข้าวโพด',         emoji:'🌽'}
+];
+
+var PRICE_PER_PC = 20;
+var DISC_THRESH  = 4500;
+var DISC_RATE    = 0.10;
+var BOX_CAP      = 300;
+var DRY_PER_BOX  = 2;
+
+var PAY_LABELS = {paid:'✅ ชำระแล้ว', pending:'⏳ รอชำระ', partial:'🔄 แบ่งชำระ', after:'📅 ชำระหลังรับ 1 วัน'};
+var PAY_CLS    = {paid:'sel-paid', pending:'sel-pending', partial:'sel-partial', after:'sel-after'};
+
+var BRANCHES_DEFAULT = [
+  {id:'b01', name:'สุราษฎร์ธานี',                         pin:'1001', currentLot:35},
+  {id:'b02', name:'บ้านสวน',                               pin:'1002', currentLot:66},
+  {id:'b03', name:'เมืองทองธานี',                          pin:'1003', currentLot:162},
+  {id:'b04', name:'ปตท. สนามบินหาดใหญ่',                  pin:'1004', currentLot:17},
+  {id:'b05', name:'นครนายก',                               pin:'1005', currentLot:266},
+  {id:'b06', name:'ปตท. M6',                              pin:'1006', currentLot:48},
+  {id:'b07', name:'ตลาดพาเจริญ คลอง 5',                  pin:'1007', currentLot:20},
+  {id:'b08', name:'ปตท.คลองหลวง',                          pin:'1008', currentLot:115},
+  {id:'b09', name:'ปตท.อ่างศิลา',                          pin:'1009', currentLot:107},
+  {id:'b10', name:'Major รัชโยธิน',                        pin:'1010', currentLot:19},
+  {id:'b11', name:'ปตท.จิฟฟี่ เลียบทางด่วน รามอินทรา 1', pin:'1011', currentLot:67},
+  {id:'b12', name:'ตลาดถนอมมิตร',                          pin:'1012', currentLot:11},
+  {id:'b13', name:'Caltex ราชพฤกษ์',                      pin:'1013', currentLot:49},
+  {id:'b14', name:'ขอนแก่น',                               pin:'1014', currentLot:21},
+  {id:'b15', name:'ปตท. คูหา',                             pin:'1015', currentLot:1},
+  {id:'b16', name:'เสนานิคม',                              pin:'1016', currentLot:27},
+  {id:'b17', name:'สระแก้ว',                               pin:'1017', currentLot:11},
+  {id:'b18', name:'บ้านบึง',                               pin:'1018', currentLot:37}
+];
+
+// ============================================================
+// STATE
+// ============================================================
+var APP = {branch:null, order:null, adminIn:false, payStatus:'pending', viewOrdId:null};
+
+// ============================================================
+// LS
+// ============================================================
+function lsGet(k) { try { return JSON.parse(localStorage.getItem('ps_'+k)); } catch(e) { return null; } }
+function lsSet(k,v) { try { localStorage.setItem('ps_'+k, JSON.stringify(v)); } catch(e) {} }
+
+// ============================================================
+// INIT
+// ============================================================
+function initApp() {
+  var bs = lsGet('branches');
+  if (!bs || Object.keys(bs).length === 0) {
+    var obj = {};
+    for (var i = 0; i < BRANCHES_DEFAULT.length; i++) {
+      var b = BRANCHES_DEFAULT[i];
+      obj[b.id] = {name:b.name, pin:b.pin, currentLot:b.currentLot};
+    }
+    lsSet('branches', obj);
+  }
+  // Seed Telegram credentials on first run (admin can change later)
+  var cfg = lsGet('settings') || {};
+  if (!cfg.tgBotToken) { cfg.tgBotToken = '8751318167:AAEQE7AtLhnWlXf0Ed6YTM8m2kb1BDtMrcQ'; }
+  if (!cfg.tgChatId)   { cfg.tgChatId   = '5566010745'; }
+  lsSet('settings', cfg);
+}
+
+// ============================================================
+// CALC
+// ============================================================
+function calcPaprikaG(n) {
+  if (n <= 0) return 0;
+  return Math.floor((n / 10) * 15 / 500) * 500;
+}
+function calcBoxes(n) { return n <= 0 ? 0 : Math.ceil(n / BOX_CAP); }
+function calcDryIce(n) { return calcBoxes(n) * DRY_PER_BOX; }
+function calcTotal() {
+  var t = 0;
+  for (var i = 0; i < FILLINGS.length; i++) { t += getQty(FILLINGS[i].id); }
+  return t;
+}
+function calcPrice(total, hasDisc) {
+  var base = total * PRICE_PER_PC;
+  return hasDisc ? Math.round(base * (1 - DISC_RATE)) : base;
+}
+function getQty(id) { var el = document.getElementById('fq_'+id); return el ? (parseInt(el.value)||0) : 0; }
+function getExtraPap() { var el = document.getElementById('extra-pap'); return el ? (parseFloat(el.value)||0) : 0; }
+
+// ============================================================
+// NAV
+// ============================================================
+function goPage(id) {
+  var pages = document.querySelectorAll('.page');
+  for (var i = 0; i < pages.length; i++) { pages[i].classList.remove('active'); }
+  var el = document.getElementById(id);
+  if (el) { el.classList.add('active'); window.scrollTo(0,0); }
+}
+
+// ============================================================
+// DATE
+// ============================================================
+function padZ(n) { return n < 10 ? '0'+n : ''+n; }
+function toThaiDate(d) { return padZ(d.getDate())+'/'+padZ(d.getMonth()+1)+'/'+((d.getFullYear()+543)%100); }
+function getMonthKey() { var d=new Date(); return d.getFullYear()+'-'+padZ(d.getMonth()+1); }
+function thMonthName(d) {
+  var n=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  return n[d.getMonth()]+' '+(d.getFullYear()+543);
+}
+
+// ============================================================
+// PIN
+// ============================================================
+function pinStep(el, idx) {
+  var v = el.value.toString();
+  if (v.length > 1) { el.value = v.slice(-1); }
+  if (v && idx < 3) { setTimeout(function() { document.getElementById('p'+(idx+1)).focus(); }, 10); }
+  if (idx === 3 && v) { doLoginBranch(); }
+}
+
+// ============================================================
+// BRANCH LOGIN
+// ============================================================
+function doLoginBranch() {
+  var pin = '';
+  for (var i = 0; i < 4; i++) { var d=document.getElementById('p'+i); pin += (d ? d.value.slice(-1) : ''); }
+  if (pin.length < 4) { showErr('bl-error','กรุณากรอก PIN ให้ครบ 4 หลัก'); return; }
+  var bs = lsGet('branches') || {};
+  var found = null;
+  var keys = Object.keys(bs);
+  for (var k = 0; k < keys.length; k++) {
+    if (bs[keys[k]].pin === pin) { found = {id:keys[k]}; var bObj = bs[keys[k]]; for (var p in bObj) found[p] = bObj[p]; break; }
+  }
+  if (!found) { showErr('bl-error','PIN ไม่ถูกต้อง'); return; }
+  for (var j = 0; j < 4; j++) { var pe=document.getElementById('p'+j); if(pe) pe.value=''; }
+  APP.branch = found; APP.payStatus = 'pending'; APP.order = null;
+  initOrderPage(); goPage('page-order');
+}
+
+// ============================================================
+// ORDER PAGE
+// ============================================================
+function initOrderPage() {
+  var b = APP.branch;
+  document.getElementById('o-branch-name').textContent = b.name;
+  document.getElementById('o-lot-info').textContent = 'Lot #'+(b.currentLot||1)+' · '+toThaiDate(new Date());
+  renderFillings();
+  var tom = new Date(); tom.setDate(tom.getDate()+1);
+  document.getElementById('del-date').value = tom.toISOString().split('T')[0];
+  document.getElementById('del-date').min   = new Date().toISOString().split('T')[0];
+  checkDate(); loadAccumBar(); checkDiscBadge(); updateSummary(); selPay('pending');
+}
+
+function renderFillings() {
+  var html = '';
+  for (var i = 0; i < FILLINGS.length; i++) {
+    var f = FILLINGS[i];
+    html += '<div class="filling-row">';
+    html += '<span class="filling-emoji">'+f.emoji+'</span>';
+    html += '<span class="filling-name">ไส้'+f.name+'</span>';
+    html += '<div class="qty-wrap">';
+    html += '<button class="qty-btn" onclick="adjQty(\''+f.id+'\',-10)">−</button>';
+    html += '<input class="qty-input" type="number" id="fq_'+f.id+'" value="0" min="0" inputmode="numeric"';
+    html += ' oninput="updateSummary()" onchange="snapQty(this)">';
+    html += '<button class="qty-btn" onclick="adjQty(\''+f.id+'\',10)">+</button>';
+    html += '</div></div>';
+  }
+  document.getElementById('filling-list').innerHTML = html;
+}
+
+function adjQty(id, delta) {
+  var el = document.getElementById('fq_'+id); if (!el) return;
+  el.value = Math.max(0, (parseInt(el.value)||0)+delta); updateSummary();
+}
+function snapQty(el) { el.value = Math.max(0, parseInt(el.value)||0); updateSummary(); }
+function adjExtraPap(delta) {
+  var el = document.getElementById('extra-pap'); if (!el) return;
+  el.value = Math.max(0, Math.round(((parseFloat(el.value)||0)+delta)*10)/10);
+}
+function snapExtraPap(el) { el.value = Math.max(0, parseFloat(el.value)||0); }
+
+function updateSummary() {
+  var total = calcTotal();
+  var mk    = getMonthKey();
+  var acc   = lsGet('accum') || {};
+  var ba    = (acc[mk] && acc[mk][APP.branch.id]) || {discountAvailable:false};
+  var papG  = calcPaprikaG(total);
+  var extra = getExtraPap();
+  var papDisp = papG > 0 ? ((papG/1000+extra).toFixed(1)) : (extra > 0 ? extra.toFixed(1) : '—');
+  var price = calcPrice(total, ba.discountAvailable);
+
+  document.getElementById('s-total').textContent = total.toLocaleString();
+  document.getElementById('s-price').textContent = price.toLocaleString();
+  document.getElementById('s-pap').textContent   = papDisp;
+  document.getElementById('s-ice').textContent   = calcDryIce(total);
+  document.getElementById('s-boxes').textContent = calcBoxes(total)+' ใบ';
+  document.getElementById('s-bags').textContent  = total > 0 ? total.toLocaleString()+' ซอง' : 'ตามจำนวน';
+}
+
+function checkDate() {
+  var v=document.getElementById('del-date').value;
+  var wEl=document.getElementById('date-warn'); var oEl=document.getElementById('date-ok');
+  if (!v) { wEl.style.display='none'; oEl.style.display='none'; return; }
+  var today=new Date(); today.setHours(0,0,0,0);
+  var diff=Math.round((new Date(v)-today)/86400000);
+  if (diff < 1) { wEl.style.display='block'; oEl.style.display='none'; }
+  else { wEl.style.display='none'; oEl.style.display='block'; document.getElementById('days-num').textContent=diff; }
+}
+
+function loadAccumBar() {
+  var mk=getMonthKey(); var acc=lsGet('accum')||{};
+  var ba=(acc[mk]&&acc[mk][APP.branch.id])||{total:0,discountAvailable:false};
+  var pct=Math.min(100,(ba.total/DISC_THRESH)*100);
+  document.getElementById('accum-bar').style.width=pct+'%';
+  document.getElementById('accum-txt').textContent=ba.total.toLocaleString()+' / '+DISC_THRESH.toLocaleString()+' ชิ้น';
+  var noteEl=document.getElementById('accum-note');
+  if (ba.discountAvailable) { noteEl.textContent='🎉 ได้สิทธิ์ส่วนลด 10% ลอตถัดไป!'; noteEl.style.color='var(--green)'; noteEl.style.fontWeight='700'; }
+  else { noteEl.textContent='สะสมครบ 4,500 ชิ้น รับส่วนลด 10% ลอตถัดไป'; noteEl.style.color=''; noteEl.style.fontWeight=''; }
+}
+
+function checkDiscBadge() {
+  var mk=getMonthKey(); var acc=lsGet('accum')||{};
+  var ba=(acc[mk]&&acc[mk][APP.branch.id])||{discountAvailable:false};
+  document.getElementById('o-disc-badge').style.display=ba.discountAvailable?'block':'none';
+}
+
+function selPay(status) {
+  APP.payStatus = status;
+  var all = ['paid','pending','partial','after'];
+  for (var i = 0; i < all.length; i++) {
+    var el = document.getElementById('pc-'+all[i]); if (!el) continue;
+    el.className = 'pay-chip'+(all[i]===status ? ' '+PAY_CLS[all[i]] : '');
+  }
+}
+
+function selModalPay(status) {
+  var all = ['paid','pending','partial','after'];
+  for (var i = 0; i < all.length; i++) {
+    var el = document.getElementById('mpc-'+all[i]); if (!el) continue;
+    el.className = 'pay-chip'+(all[i]===status ? ' '+PAY_CLS[all[i]] : '');
+  }
+}
+
+// ============================================================
+// PREVIEW
+// ============================================================
+function doPreview() {
+  var total = calcTotal();
+  if (total === 0) { alert('กรุณากรอกจำนวนขนมอย่างน้อย 1 ชิ้น'); return; }
+  if (!document.getElementById('del-date').value) { alert('กรุณาเลือกวันที่รับขนม'); return; }
+  buildOrderText();
+  var cfg = lsGet('settings')||{};
+  document.getElementById('tg-btn-wrap').style.display = (cfg.tgBotToken&&cfg.tgChatId) ? 'block' : 'none';
+  document.getElementById('send-status').style.display = 'none';
+  var mk=getMonthKey(); var acc=lsGet('accum')||{};
+  var ba=(acc[mk]&&acc[mk][APP.branch.id])||{discountAvailable:false};
+  document.getElementById('preview-disc-banner').style.display=ba.discountAvailable?'block':'none';
+  goPage('page-preview');
+}
+
+function buildOrderText() {
+  var b=APP.branch; var dv=document.getElementById('del-date').value;
+  var dStr=toThaiDate(new Date(dv)); var todayStr=toThaiDate(new Date());
+  var lotNo=b.currentLot||1;
+  var mk=getMonthKey(); var acc=lsGet('accum')||{};
+  var ba=(acc[mk]&&acc[mk][b.id])||{discountAvailable:false};
+  var hasDisc=ba.discountAvailable;
+  var total=calcTotal(); var papG=calcPaprikaG(total); var extraPap=getExtraPap();
+  var price=calcPrice(total, hasDisc);
+  var notes=document.getElementById('o-notes').value.trim();
+
+  var lines=[];
+  lines.push('สาขา '+b.name);
+  lines.push('#'+lotNo+'  Date '+todayStr);
+  if (hasDisc) { lines.push('🎉 [ออเดอร์ส่วนลด 10%]'); }
+
+  for (var i=0; i<FILLINGS.length; i++) {
+    var f=FILLINGS[i]; var qty=getQty(f.id);
+    if (qty>0) { lines.push('ไส้'+f.name+'  '+qty+' ชิ้น'); }
+  }
+
+  lines.push('รวม  '+total+' ชิ้น');
+  lines.push('ซองตามจำนวน');
+
+  if (papG>0) { lines.push('ปาปริก้า  '+(papG/1000).toFixed(1)+' กก.'); }
+  if (extraPap>0) { lines.push('ปาปริก้าพิเศษ  '+extraPap.toFixed(1)+' กก.  → รอใบแจ้งราคาจากผู้ประสานงาน'); }
+
+  lines.push('');
+  lines.push('ยอดรวม  '+price.toLocaleString()+' บาท (ยังไม่รวม VAT)');
+  if (hasDisc) { lines.push('(ราคารวมส่วนลด 10% แล้ว)'); }
+  lines.push('สถานะชำระ  '+(PAY_LABELS[APP.payStatus]||'รอชำระ'));
+  lines.push('');
+  lines.push('จัดส่งวันที่  '+dStr);
+  if (notes) { lines.push('หมายเหตุ: '+notes); }
+
+  var txt=lines.join('\n');
+  document.getElementById('prev-text').textContent=txt;
+
+  var fillings={};
+  for (var j=0; j<FILLINGS.length; j++) { fillings[FILLINGS[j].id]=getQty(FILLINGS[j].id); }
+
+  APP.order = {
+    branchId:b.id, branchName:b.name, lotNo:lotNo,
+    orderDate:todayStr, deliveryDate:dStr, deliveryRaw:dv,
+    fillings:fillings, total:total, paprikaG:papG, extraPapKg:extraPap,
+    hasDiscount:hasDisc, price:price, payStatus:APP.payStatus,
+    notes:notes, text:txt, ts:Date.now()
+  };
+}
+
+// ============================================================
+// SEND
+// ============================================================
+function doCopy() {
+  var txt=document.getElementById('prev-text').textContent;
+  if (navigator.clipboard) {
+    navigator.clipboard.writeText(txt).then(function() { alert('✅ คัดลอกแล้ว!'); });
+  } else {
+    var ta=document.createElement('textarea'); ta.value=txt;
+    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
+    document.body.removeChild(ta); alert('✅ คัดลอกแล้ว!');
+  }
+}
+
+function doShareLine() {
+  var txt=document.getElementById('prev-text').textContent;
+  window.open('https://line.me/R/share?text='+encodeURIComponent(txt), '_blank');
+}
+
+function doSendTelegram() {
+  var cfg=lsGet('settings')||{};
+  if (!cfg.tgBotToken||!cfg.tgChatId) { alert('กรุณาตั้งค่า Telegram ก่อน'); return; }
+  var txt=document.getElementById('prev-text').textContent;
+  var stEl=document.getElementById('send-status');
+  stEl.style.display='block'; stEl.className='alert alert-info'; stEl.textContent='⏳ กำลังส่ง...';
+  sendTelegramRaw(txt, function(result) {
+    if (result.sent) { stEl.className='alert alert-success'; stEl.textContent='✅ ส่ง Telegram สำเร็จ!'; }
+    else { stEl.className='alert alert-danger'; stEl.textContent='❌ '+result.reason; }
+  });
+}
+
+// Reusable Telegram sender — used by both manual button and auto-send on confirm
+function sendTelegramRaw(orderText, callback) {
+  var cfg = lsGet('settings') || {};
+  if (!cfg.tgBotToken || !cfg.tgChatId) { callback({sent:false, reason:'not-configured'}); return; }
+  fetch('https://api.telegram.org/bot' + cfg.tgBotToken + '/sendMessage', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({chat_id: cfg.tgChatId, text: '📦 ออเดอร์ใหม่\n\n' + orderText})
+  })
+  .then(function(r) { return r.json(); })
+  .then(function(d) { callback({sent: !!d.ok, reason: d.ok ? 'ok' : (d.description || 'ส่งไม่สำเร็จ')}); })
+  .catch(function(e) { callback({sent:false, reason: e.message}); });
+}
+
+// Retry from success page if Telegram failed
+function retryTelegramFromSuccess() {
+  var orders = lsGet('orders') || [];
+  if (!orders.length) return;
+  var lastOrder = orders[0]; // unshift means newest is index 0
+  var stEl = document.getElementById('suc-tg-status');
+  stEl.className = 'alert alert-info';
+  stEl.innerHTML = '⏳ กำลังส่ง Telegram...';
+  sendTelegramRaw(lastOrder.text || '', function(r) {
+    if (r.sent) { stEl.className = 'alert alert-success'; stEl.innerHTML = '✅ ส่ง Telegram สำเร็จ — แอดมินได้รับออเดอร์แล้ว'; }
+    else { stEl.className = 'alert alert-danger'; stEl.innerHTML = '⚠️ ส่งไม่สำเร็จ: ' + r.reason + ' &nbsp; <button class="btn btn-xs btn-outline" style="margin-left:6px;padding:4px 10px;" onclick="retryTelegramFromSuccess()">ลองใหม่</button>'; }
+  });
+}
+
+// ============================================================
+// CONFIRM ORDER
+// ============================================================
+function doConfirmOrder() {
+  var ord=APP.order; if (!ord) { alert('กรุณาตรวจสอบออเดอร์ก่อน'); return; }
+  ord.id = 'o'+Date.now();
+  var orders=lsGet('orders')||[]; orders.unshift(ord); lsSet('orders', orders);
+
+  var mk=getMonthKey(); var acc=lsGet('accum')||{};
+  if (!acc[mk]) acc[mk]={};
+  if (!acc[mk][ord.branchId]) acc[mk][ord.branchId]={total:0,discountAvailable:false};
+  var ba=acc[mk][ord.branchId];
+
+  if (ord.hasDiscount) { ba.discountAvailable=false; ba.total=ord.total; }
+  else { ba.total += ord.total; }
+
+  var newReach=false;
+  if (ba.total>=DISC_THRESH && !ba.discountAvailable) { ba.discountAvailable=true; newReach=true; }
+  lsSet('accum', acc);
+
+  var branches=lsGet('branches')||{};
+  if (branches[ord.branchId]) {
+    var newLot=(ord.lotNo||1)+1;
+    branches[ord.branchId].currentLot=newLot;
+    APP.branch.currentLot=newLot;
+    lsSet('branches', branches);
+  }
+
+  syncOrderToFirebase(ord);
+
+  document.getElementById('suc-lot').textContent='Lot #'+ord.lotNo+' · รวม '+ord.total.toLocaleString()+' ชิ้น';
+  document.getElementById('suc-detail').textContent='กำหนดส่ง '+ord.deliveryDate+' · '+ord.price.toLocaleString()+' บาท';
+  document.getElementById('suc-disc').style.display=newReach?'block':'none';
+
+  // Show "sending Telegram" indicator immediately, fire request in background
+  var tgStatusEl = document.getElementById('suc-tg-status');
+  if (tgStatusEl) {
+    var cfg = lsGet('settings') || {};
+    if (cfg.tgBotToken && cfg.tgChatId) {
+      tgStatusEl.style.display = 'block';
+      tgStatusEl.className = 'alert alert-info';
+      tgStatusEl.innerHTML = '⏳ กำลังส่งออเดอร์ไปยัง Telegram...';
+      sendTelegramRaw(ord.text, function(r) {
+        if (r.sent) { tgStatusEl.className = 'alert alert-success'; tgStatusEl.innerHTML = '✅ ส่ง Telegram สำเร็จ — แอดมินได้รับออเดอร์แล้ว'; }
+        else { tgStatusEl.className = 'alert alert-danger'; tgStatusEl.innerHTML = '⚠️ ส่ง Telegram ไม่สำเร็จ: ' + r.reason + ' &nbsp; <button class="btn btn-xs btn-outline" style="margin-left:6px;padding:4px 10px;" onclick="retryTelegramFromSuccess()">ลองใหม่</button>'; }
+      });
+    } else {
+      tgStatusEl.style.display = 'none';
+    }
+  }
+
+  goPage('page-success');
+}
+
+function doNewOrder() {
+  for (var i=0; i<FILLINGS.length; i++) { var el=document.getElementById('fq_'+FILLINGS[i].id); if(el) el.value=0; }
+  var ep=document.getElementById('extra-pap'); if(ep) ep.value=0;
+  document.getElementById('o-notes').value=''; APP.order=null;
+  initOrderPage(); goPage('page-order');
+}
+
+function confirmLogout() {
+  if (confirm('ออกจากระบบสาขา?')) { APP.branch=null; goPage('page-landing'); }
+}
+
+// ============================================================
+// FIREBASE REST
+// ============================================================
+function getFbCfg() { var c=lsGet('settings')||{}; return {url:c.fbUrl||'',secret:c.fbSecret||'',path:c.fbPath||'puffstick'}; }
+function fbEndpoint(sub) {
+  var c=getFbCfg(); if (!c.url) return null;
+  var base=c.url.replace(/\/$/,'')+'/'+c.path+'/'+sub+'.json';
+  if (c.secret) base+='?auth='+c.secret;
+  return base;
+}
+function syncOrderToFirebase(ord) {
+  var ep=fbEndpoint('orders/'+ord.id); if (!ep) return;
+  fetch(ep,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(ord)}).catch(function(){});
+}
+
+// ============================================================
+// ADMIN
+// ============================================================
+function doLoginAdmin() {
+  var pw=document.getElementById('adm-pw').value;
+  var cfg=lsGet('settings')||{};
+  if (pw===(cfg.adminPassword||'admin1234')) {
+    APP.adminIn=true; document.getElementById('adm-pw').value='';
+    loadAdminDash(); goPage('page-admin');
+  } else { showErr('al-error','รหัสผ่านไม่ถูกต้อง'); }
+}
+function doLogoutAdmin() { APP.adminIn=false; goPage('page-landing'); }
+
+function loadAdminDash() {
+  var orders=lsGet('orders')||{}; if (!Array.isArray(orders)) orders=[];
+  var now=new Date();
+  document.getElementById('adm-month-label').textContent=thMonthName(now);
+  var monthOrds=orders.filter(function(o){
+    var d=new Date(o.ts||0);
+    return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();
+  });
+  var totalPcs=monthOrds.reduce(function(s,o){return s+(o.total||0);},0);
+  var revenue=monthOrds.reduce(function(s,o){return s+(o.price||0);},0);
+  var pending=monthOrds.filter(function(o){return o.payStatus==='pending';}).length;
+  document.getElementById('adm-stat-orders').textContent=monthOrds.length;
+  document.getElementById('adm-stat-pieces').textContent=totalPcs.toLocaleString();
+  document.getElementById('adm-stat-revenue').textContent=revenue.toLocaleString();
+  document.getElementById('adm-stat-pending').textContent=pending;
+}
+
+function openAdminTab(tab) {
+  if (tab==='branches') { loadBranches(); goPage('page-adm-branches'); }
+  else if (tab==='history') { loadHistFilter(); loadHistory(); goPage('page-adm-history'); }
+  else if (tab==='accum')   { loadAccumAdmin(); goPage('page-adm-accum'); }
+  else if (tab==='settings'){ loadSettingsPage(); goPage('page-adm-settings'); }
+}
+
+// ============================================================
+// BRANCHES ADMIN
+// ============================================================
+function loadBranches() {
+  var bs=lsGet('branches')||{}; var keys=Object.keys(bs); var html='';
+  if (!keys.length) { html='<div class="alert alert-info">กด ＋ เพื่อเพิ่มสาขา</div>'; }
+  else {
+    for (var i=0; i<keys.length; i++) {
+      var id=keys[i]; var b=bs[id];
+      html += '<div class="card">';
+      html += '<div class="flex-between mb-8">';
+      html += '<span class="text-bold" style="font-size:15px;">'+b.name+'</span>';
+      html += '<span class="badge badge-gray">PIN: '+b.pin+'</span>';
+      html += '</div>';
+      html += '<div class="flex-between text-sm text-gray mb-10">';
+      html += '<span>Lot ปัจจุบัน: <strong>#'+(b.currentLot||1)+'</strong></span>';
+      html += '</div>';
+      html += '<div style="display:flex;gap:8px;">';
+      html += '<button class="btn btn-outline btn-sm" onclick="editBranch(\''+id+'\')">แก้ไข</button>';
+      html += '<button class="btn btn-ghost btn-sm" onclick="delBranch(\''+id+'\')">ลบ</button>';
+      html += '</div></div>';
+    }
+  }
+  document.getElementById('branches-list').innerHTML=html;
+}
+
+function showAddBranch() {
+  document.getElementById('mbr-title').textContent='เพิ่มสาขาใหม่';
+  document.getElementById('mbr-id').value=''; document.getElementById('mbr-name').value='';
+  document.getElementById('mbr-pin').value=''; document.getElementById('mbr-lot').value='1';
+  openModal('modal-branch');
+}
+function editBranch(id) {
+  var bs=lsGet('branches')||{}; var b=bs[id]; if(!b) return;
+  document.getElementById('mbr-title').textContent='แก้ไขสาขา';
+  document.getElementById('mbr-id').value=id; document.getElementById('mbr-name').value=b.name;
+  document.getElementById('mbr-pin').value=b.pin; document.getElementById('mbr-lot').value=b.currentLot||1;
+  openModal('modal-branch');
+}
+function saveBranch() {
+  var name=document.getElementById('mbr-name').value.trim();
+  var pin=document.getElementById('mbr-pin').value.trim();
+  var lot=parseInt(document.getElementById('mbr-lot').value)||1;
+  var editId=document.getElementById('mbr-id').value;
+  if (!name) { alert('กรุณากรอกชื่อสาขา'); return; }
+  if (!/^\d{4}$/.test(pin)) { alert('PIN ต้องเป็นตัวเลข 4 หลัก'); return; }
+  var bs=lsGet('branches')||{};
+  var keys=Object.keys(bs);
+  for (var k=0; k<keys.length; k++) { if (bs[keys[k]].pin===pin && keys[k]!==editId) { alert('PIN นี้ถูกใช้แล้ว'); return; } }
+  var id=editId||('b'+Date.now());
+  bs[id]={name:name,pin:pin,currentLot:lot};
+  lsSet('branches',bs); closeModal('modal-branch'); loadBranches();
+}
+function delBranch(id) {
+  var bs=lsGet('branches')||{}; var name=bs[id]?bs[id].name:id;
+  if (!confirm('ลบสาขา "'+name+'"?')) return;
+  delete bs[id]; lsSet('branches',bs); loadBranches();
+}
+
+// ============================================================
+// HISTORY ADMIN
+// ============================================================
+function loadHistFilter() {
+  var bs=lsGet('branches')||{}; var sel=document.getElementById('hist-filter-br');
+  sel.innerHTML='<option value="">— ทุกสาขา —</option>';
+  var keys=Object.keys(bs);
+  for (var k=0; k<keys.length; k++) {
+    sel.innerHTML+='<option value="'+keys[k]+'">'+bs[keys[k]].name+'</option>';
+  }
+}
+function loadHistory() {
+  var brF=document.getElementById('hist-filter-br').value;
+  var paF=document.getElementById('hist-filter-pay').value;
+  var orders=lsGet('orders')||[]; if (!Array.isArray(orders)) orders=[];
+  if (brF) orders=orders.filter(function(o){return o.branchId===brF;});
+  if (paF) orders=orders.filter(function(o){return o.payStatus===paF;});
+  if (!orders.length) { document.getElementById('hist-list').innerHTML='<div class="alert alert-info">ไม่พบออเดอร์</div>'; return; }
+  var html='';
+  var show=orders.slice(0,80);
+  for (var i=0; i<show.length; i++) {
+    var o=show[i];
+    var payBCls = o.payStatus==='paid' ? 'badge-green' : o.payStatus==='after' ? 'badge-gray' : o.payStatus==='partial' ? 'badge-blue' : 'badge-orange';
+    html += '<div class="ord-item" onclick="showOrdDetail(\''+o.id+'\')">';
+    html += '<div class="flex-between mb-8"><span class="ord-lot">'+o.branchName+' #'+o.lotNo+'</span><span class="text-xs text-gray">'+o.orderDate+'</span></div>';
+    html += '<div class="flex-between mb-8">';
+    html += '<span class="text-bold">'+(o.total||0).toLocaleString()+' ชิ้น &nbsp;·&nbsp; '+(o.price||0).toLocaleString()+' บ.</span>';
+    html += (o.hasDiscount ? '<span class="badge badge-gold">💰 ส่วนลด</span>' : '');
+    html += '</div>';
+    html += '<div class="flex-between">';
+    html += '<span class="text-xs text-gray">ส่ง '+o.deliveryDate+'</span>';
+    html += '<span class="badge '+payBCls+'" style="font-size:10px;">'+(PAY_LABELS[o.payStatus]||o.payStatus||'—')+'</span>';
+    html += '</div></div>';
+  }
+  document.getElementById('hist-list').innerHTML=html;
+}
+
+function showOrdDetail(id) {
+  var orders=lsGet('orders')||[]; var o=null;
+  for (var i=0; i<orders.length; i++) { if(orders[i].id===id){o=orders[i];break;} }
+  if (!o) return;
+  APP.viewOrdId=id;
+  var body='<div class="order-text" style="font-size:12px;">';
+  body+=(o.text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+  body+='</div>';
+  document.getElementById('modal-ord-body').innerHTML=body;
+  selModalPay(o.payStatus||'pending');
+  openModal('modal-ord');
+}
+
+function updatePayStatus(status) {
+  var id=APP.viewOrdId; if (!id) return;
+  var orders=lsGet('orders')||[];
+  for (var i=0; i<orders.length; i++) { if(orders[i].id===id){orders[i].payStatus=status;break;} }
+  lsSet('orders',orders); selModalPay(status); loadHistory();
+}
+
+function copyModalOrd() {
+  var orders=lsGet('orders')||[]; var o=null;
+  for (var i=0; i<orders.length; i++) { if(orders[i].id===APP.viewOrdId){o=orders[i];break;} }
+  if (!o) return;
+  navigator.clipboard.writeText(o.text||'').then(function(){alert('คัดลอกแล้ว!');});
+}
+
+// ============================================================
+// CSV EXPORT
+// ============================================================
+function exportCSV() {
+  var orders=lsGet('orders')||[]; if (!Array.isArray(orders)) orders=[];
+  if (!orders.length) { alert('ยังไม่มีออเดอร์'); return; }
+  var rows=[['LotNo','สาขา','วันสั่ง','วันส่ง','ชิ้นรวม','ราคา(บาท)','ปาปริก้า(ก.)','ปาปริก้าพิเศษ(กก.)','สถานะชำระ','ส่วนลด'].join(',')];
+  for (var i=0; i<orders.length; i++) {
+    var o=orders[i];
+    rows.push([
+      o.lotNo||'',
+      '"'+(o.branchName||'').replace(/"/g,'""')+'"',
+      o.orderDate||'',
+      o.deliveryDate||'',
+      o.total||0,
+      o.price||0,
+      o.paprikaG||0,
+      o.extraPapKg||0,
+      '"'+(PAY_LABELS[o.payStatus]||o.payStatus||'')+'"',
+      o.hasDiscount?'10%':''
+    ].join(','));
+  }
+  var csv='\uFEFF'+rows.join('\r\n');
+  var blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
+  var url=URL.createObjectURL(blob);
+  var a=document.createElement('a'); a.href=url;
+  a.download='puffstick-orders-'+getMonthKey()+'.csv';
+  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+// ============================================================
+// ACCUM ADMIN
+// ============================================================
+function loadAccumAdmin() {
+  var mk=getMonthKey(); var acc=lsGet('accum')||{}; var bs=lsGet('branches')||{};
+  var mAcc=acc[mk]||{};
+  var html='<div class="alert alert-info text-sm mb-10">ยอดสะสมประจำเดือน <strong>'+thMonthName(new Date())+'</strong></div>';
+  var keys=Object.keys(bs);
+  if (!keys.length) { html+='<div class="alert alert-warning">ยังไม่มีสาขา</div>'; }
+  else {
+    for (var i=0; i<keys.length; i++) {
+      var id=keys[i]; var b=bs[id]; var ba=mAcc[id]||{total:0,discountAvailable:false};
+      var pct=Math.min(100,(ba.total/DISC_THRESH)*100);
+      html+='<div class="card">';
+      html+='<div class="flex-between mb-8">';
+      html+='<span class="text-bold">'+b.name+'</span>';
+      if (ba.discountAvailable) { html+='<span class="badge badge-gold">💰 มีสิทธิ์ส่วนลด</span>'; }
+      html+='</div>';
+      html+='<div class="flex-between text-sm mb-8"><span class="text-gray">ยอดสะสม</span>';
+      html+='<span class="text-bold text-brown">'+ba.total.toLocaleString()+' / '+DISC_THRESH.toLocaleString()+' ชิ้น</span></div>';
+      html+='<div class="prog-wrap"><div class="prog-bar" style="width:'+pct.toFixed(1)+'%"></div></div>';
+      if (!ba.discountAvailable) { html+='<div class="text-xs text-gray mt-8">เหลืออีก '+(DISC_THRESH-ba.total).toLocaleString()+' ชิ้น</div>'; }
+      html+='</div>';
+    }
+  }
+  document.getElementById('accum-list-adm').innerHTML=html;
+}
+
+// ============================================================
+// SETTINGS
+// ============================================================
+function loadSettingsPage() {
+  var cfg=lsGet('settings')||{};
+  var f=function(id,val){ var el=document.getElementById(id); if(el) el.value=val||''; };
+  f('cfg-tg-token', cfg.tgBotToken); f('cfg-tg-chat', cfg.tgChatId);
+  f('cfg-fb-url', cfg.fbUrl); f('cfg-fb-secret', cfg.fbSecret);
+  var fp=document.getElementById('cfg-fb-path'); if(fp) fp.value=cfg.fbPath||'puffstick';
+}
+function saveTgSettings() {
+  var cfg=lsGet('settings')||{};
+  cfg.tgBotToken=document.getElementById('cfg-tg-token').value.trim();
+  cfg.tgChatId=document.getElementById('cfg-tg-chat').value.trim();
+  lsSet('settings',cfg); alert('✅ บันทึก Telegram แล้ว');
+}
+function testTelegram() {
+  var cfg=lsGet('settings')||{};
+  if (!cfg.tgBotToken||!cfg.tgChatId) { alert('กรุณากรอก Token และ Chat ID ก่อน'); return; }
+  fetch('https://api.telegram.org/bot'+cfg.tgBotToken+'/sendMessage',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({chat_id:cfg.tgChatId,text:'✅ PuffStick Order System เชื่อมต่อสำเร็จ! 🥐'})
+  }).then(function(r){return r.json();}).then(function(d){
+    alert(d.ok?'✅ ส่งสำเร็จ!':'❌ '+d.description);
+  }).catch(function(e){alert('❌ '+e.message);});
+}
+function saveFbSettings() {
+  var cfg=lsGet('settings')||{};
+  cfg.fbUrl=document.getElementById('cfg-fb-url').value.trim();
+  cfg.fbSecret=document.getElementById('cfg-fb-secret').value.trim();
+  cfg.fbPath=document.getElementById('cfg-fb-path').value.trim()||'puffstick';
+  lsSet('settings',cfg); alert('✅ บันทึก Firebase แล้ว');
+}
+function testFirebase() {
+  var ep=fbEndpoint('_ping'); if (!ep) { alert('กรุณากรอก Firebase URL ก่อน'); return; }
+  fetch(ep,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({ts:Date.now()})})
+    .then(function(r){return r.json();})
+    .then(function(d){alert(d&&d.ts?'✅ Firebase เชื่อมต่อสำเร็จ!':'⚠️ Firebase ตอบกลับ แต่ Rules อาจจำกัด');})
+    .catch(function(e){alert('❌ '+e.message);});
+}
+function saveAdminPw() {
+  var pw=document.getElementById('cfg-new-pw').value;
+  if (!pw||pw.length<4){alert('รหัสผ่านต้องมีอย่างน้อย 4 ตัว');return;}
+  var cfg=lsGet('settings')||{}; cfg.adminPassword=pw; lsSet('settings',cfg);
+  document.getElementById('cfg-new-pw').value=''; alert('✅ เปลี่ยนรหัสผ่านแล้ว');
+}
+function clearAllData() {
+  if (!confirm('⚠️ ล้างข้อมูลทั้งหมด?')) return;
+  if (!confirm('ยืนยัน — ไม่สามารถยกเลิกได้')) return;
+  ['branches','orders','accum'].forEach(function(k){localStorage.removeItem('ps_'+k);});
+  alert('ล้างข้อมูลแล้ว'); loadAdminDash();
+}
+
+// ============================================================
+// MODAL
+// ============================================================
+function openModal(id)  { document.getElementById(id).classList.add('open'); }
+function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+document.querySelectorAll('.modal-bg').forEach(function(bg){
+  bg.addEventListener('click',function(e){if(e.target===bg)bg.classList.remove('open');});
+});
+
+// ============================================================
+// UTILS
+// ============================================================
+function showErr(elId, msg) {
+  var el=document.getElementById(elId); if (!el) return;
+  el.textContent=msg; el.style.display='block';
+  setTimeout(function(){el.style.display='none';},3500);
+}
+
+// ============================================================
+// BOOT
+// ============================================================
+document.addEventListener('DOMContentLoaded', function(){ initApp(); });
+</script>
+</body>
+</html>
