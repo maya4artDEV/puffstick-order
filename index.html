@@ -1963,6 +1963,8 @@ function manualPullOrders() {
     if (el) el.innerHTML = '❌ ' + e.message;
   });
 }
+
+function forcePushBranches() {
   var fb = fbConfig();
   if (!fb) { alert('⚠️ กรุณาตั้งค่า Firebase URL ก่อน'); return; }
   if (!confirm('ส่งรายการสาขาทั้งหมดขึ้น cloud?\n(จะทับข้อมูลเดิมบน cloud)')) return;
