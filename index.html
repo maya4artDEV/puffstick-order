@@ -172,6 +172,14 @@ textarea.form-input{resize:none;line-height:1.5}
 /* Modal locations list */
 .mloc-row{display:flex;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--border);}
 .mloc-row:last-child{border-bottom:none;}
+/* Edit order stepper */
+.edit-fill-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border);}
+.edit-fill-row:last-child{border-bottom:none;}
+.edit-fill-name{flex:1;font-size:14px;font-weight:500;}
+.edit-fill-stepper{display:flex;align-items:center;gap:0;}
+.stepper-btn{width:36px;height:36px;border:1.5px solid var(--border);background:#fff;border-radius:8px;font-size:18px;font-weight:700;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--blue-deep);transition:background .15s;}
+.stepper-btn:active{background:var(--blue-tint);}
+.stepper-val{width:52px;text-align:center;font-size:15px;font-weight:700;color:var(--ink);}
 .mloc-inp{flex:1;padding:7px 10px;border:1.5px solid var(--border);border-radius:8px;font-family:'Noto Sans Thai','Poppins',sans-serif;font-size:14px;color:var(--brown-dark);}
 .mloc-inp:focus{outline:none;border-color:var(--brown);}
 .mloc-del{background:none;border:none;color:var(--gray-light);font-size:18px;cursor:pointer;padding:2px 6px;}
@@ -505,6 +513,9 @@ textarea.form-input{resize:none;line-height:1.5}
         <button class="btn btn-outline btn-sm" onclick="manualSyncBranches()" style="flex:1;min-width:140px;">🔄 Sync สาขาเดี๋ยวนี้</button>
         <button class="btn btn-outline btn-sm" onclick="forcePushBranches()" style="flex:1;min-width:140px;">⬆️ ส่งสาขาขึ้น cloud</button>
       </div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+        <button class="btn btn-outline btn-sm" onclick="manualPullOrders()" style="flex:1;min-width:140px;">📥 ดึงออเดอร์จาก cloud</button>
+      </div>
       <div id="fb-sync-status" class="text-xs text-gray" style="margin-top:8px;"></div>
     </div>
     <div class="card">
@@ -556,7 +567,30 @@ textarea.form-input{resize:none;line-height:1.5}
     </div>
     <div class="grid-2 mt-12">
       <button class="btn btn-ghost" onclick="closeModal('modal-ord')">ปิด</button>
-      <button class="btn btn-primary" onclick="copyModalOrd()">📋 คัดลอก</button>
+      <button class="btn btn-outline" onclick="openEditOrder()" style="color:var(--blue-deep);border-color:var(--blue-deep);">✏️ แก้ไขจำนวน</button>
+    </div>
+    <div class="grid-2 mt-8">
+      <button class="btn btn-primary" onclick="copyModalOrd()">📋 คัดลอกข้อความ</button>
+      <button class="btn btn-danger btn-sm" onclick="deleteOrder()" style="background:var(--red);color:#fff;">🗑 ลบออเดอร์นี้</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: EDIT ORDER (admin adjust qty) -->
+<div class="modal-bg" id="modal-edit-ord">
+  <div class="modal-box" style="max-height:88vh;overflow-y:auto;">
+    <div class="modal-title">✏️ แก้ไขออเดอร์</div>
+    <div class="alert alert-warning text-sm mb-10">แก้ไขจำนวนกรณีสาขาสั่งผิด<br>ระบบจะคำนวณยอด ปาปริก้า และข้อความใหม่อัตโนมัติ</div>
+    <div id="edit-ord-branch" class="text-bold mb-8" style="color:var(--blue-deep);"></div>
+    <div id="edit-ord-rows"></div>
+    <div class="card" style="margin-top:12px;padding:10px 12px;background:var(--blue-tint);">
+      <div class="flex-between mb-4"><span class="text-sm text-gray">รวม</span><span class="text-bold" id="edit-ord-total">0 ชิ้น</span></div>
+      <div class="flex-between mb-4"><span class="text-sm text-gray">ราคา (ไม่รวม VAT)</span><span class="text-bold" id="edit-ord-price">0 บาท</span></div>
+      <div class="flex-between"><span class="text-sm text-gray">ปาปริก้า</span><span class="text-bold" id="edit-ord-pap">0 ก.</span></div>
+    </div>
+    <div class="grid-2 mt-12">
+      <button class="btn btn-ghost" onclick="closeModal('modal-edit-ord')">ยกเลิก</button>
+      <button class="btn btn-primary" onclick="saveEditOrder()">💾 บันทึกแก้ไข</button>
     </div>
   </div>
 </div>
@@ -691,8 +725,10 @@ function initApp() {
   setLandingDate();
   applyCustomImages();
 
-  // Pull branches from Firebase on app load (if configured)
-  pullBranchesFromFirebase();
+  // Pull everything from Firebase on app load
+  pullConfigFromFirebase();   // admin password, Telegram
+  pullBranchesFromFirebase(); // branches / PIN
+  pullOrdersFromFirebase();   // order history
 }
 
 function setLandingDate() {
@@ -822,11 +858,10 @@ function loadMediaSettingsUI() {
 // whenever admin saves changes. Last-write-wins via timestamp.
 function fbConfig() {
   var cfg = lsGet('settings') || {};
-  if (!cfg.fbUrl) return null;
-  var url = cfg.fbUrl.replace(/\/$/, '');
-  var path = (cfg.fbPath || 'puffstick').replace(/^\/|\/$/g, '');
+  var url  = cfg.fbUrl  || FB_DEFAULT_URL;
+  var path = (cfg.fbPath || FB_DEFAULT_PATH).replace(/^\/|\/$/g, '');
   var auth = cfg.fbSecret ? ('?auth='+encodeURIComponent(cfg.fbSecret)) : '';
-  return { base: url+'/'+path, auth: auth };
+  return { base: url + '/' + path, auth: auth };
 }
 
 function pullBranchesFromFirebase() {
@@ -1371,16 +1406,90 @@ function confirmLogout() {
 // ============================================================
 // FIREBASE REST
 // ============================================================
-function getFbCfg() { var c=lsGet('settings')||{}; return {url:c.fbUrl||'',secret:c.fbSecret||'',path:c.fbPath||'puffstick'}; }
+// ─── FIREBASE HARDCODED (ลูกค้าไม่ต้องตั้ง) ─────────────────
+var FB_DEFAULT_URL  = 'https://puff-stick-fc-order-default-rtdb.asia-southeast1.firebasedatabase.app';
+var FB_DEFAULT_PATH = 'puffstick';
+
+function getFbCfg() {
+  var c = lsGet('settings') || {};
+  return {
+    url:    c.fbUrl    || FB_DEFAULT_URL,
+    secret: c.fbSecret || '',
+    path:   c.fbPath   || FB_DEFAULT_PATH
+  };
+}
 function fbEndpoint(sub) {
-  var c=getFbCfg(); if (!c.url) return null;
-  var base=c.url.replace(/\/$/,'')+'/'+c.path+'/'+sub+'.json';
-  if (c.secret) base+='?auth='+c.secret;
+  var c = getFbCfg(); if (!c.url) return null;
+  var base = c.url.replace(/\/$/,'') + '/' + c.path + '/' + sub + '.json';
+  if (c.secret) base += '?auth=' + c.secret;
   return base;
 }
 function syncOrderToFirebase(ord) {
   var ep=fbEndpoint('orders/'+ord.id); if (!ep) return;
   fetch(ep,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(ord)}).catch(function(){});
+}
+
+function deleteOrderFromFirebase(ordId) {
+  var ep=fbEndpoint('orders/'+ordId); if (!ep) return;
+  fetch(ep, {method:'DELETE'}).catch(function(){});
+}
+
+// ─── CONFIG SYNC (admin password, Telegram) ────────────────────
+// Fields that sync across devices via Firebase
+var CONFIG_SYNC_FIELDS = ['adminPassword','tgBotToken','tgChatId'];
+
+function pushConfigToFirebase() {
+  var ep = fbEndpoint('config');
+  if (!ep) return;
+  var cfg = lsGet('settings') || {};
+  var payload = {};
+  for (var i=0; i<CONFIG_SYNC_FIELDS.length; i++) {
+    var k = CONFIG_SYNC_FIELDS[i];
+    if (cfg[k]) payload[k] = cfg[k];
+  }
+  payload._ts = Date.now();
+  fetch(ep, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)})
+    .catch(function(){});
+}
+
+function pullConfigFromFirebase() {
+  var ep = fbEndpoint('config');
+  if (!ep) return;
+  fetch(ep).then(function(r){ return r.ok ? r.json() : null; }).then(function(data){
+    if (!data || !data._ts) return;
+    var cfg = lsGet('settings') || {};
+    var localTs = cfg._configTs || 0;
+    if (data._ts <= localTs) return; // local is current
+    // Remote is newer — adopt synced fields
+    for (var i=0; i<CONFIG_SYNC_FIELDS.length; i++) {
+      var k = CONFIG_SYNC_FIELDS[i];
+      if (data[k]) cfg[k] = data[k];
+    }
+    cfg._configTs = data._ts;
+    lsSet('settings', cfg);
+    console.log('[FB] Pulled config ts:', data._ts);
+  }).catch(function(){});
+}
+
+function pullOrdersFromFirebase() {
+  var ep = fbEndpoint('orders'); if (!ep) return;
+  fetch(ep).then(function(r){ return r.ok ? r.json() : null; }).then(function(data){
+    if (!data) return;
+    // data is an object keyed by orderId
+    var remoteOrds = Object.values(data).filter(function(o){ return o && o.id; });
+    if (!remoteOrds.length) return;
+    var localOrds = lsGet('orders') || [];
+    if (!Array.isArray(localOrds)) localOrds = [];
+    // Merge: build a map, remote wins for same id
+    var map = {};
+    for (var i=0; i<localOrds.length; i++) { if(localOrds[i].id) map[localOrds[i].id] = localOrds[i]; }
+    for (var j=0; j<remoteOrds.length; j++) { if(remoteOrds[j].id) map[remoteOrds[j].id] = remoteOrds[j]; }
+    var merged = Object.values(map);
+    // Sort by ts desc
+    merged.sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
+    lsSet('orders', merged);
+    console.log('[FB] Pulled orders:', merged.length);
+  }).catch(function(e){ console.warn('[FB] Pull orders failed:', e); });
 }
 
 // ============================================================
@@ -1411,17 +1520,13 @@ function loadAdminDash() {
   document.getElementById('adm-stat-pieces').textContent=totalPcs.toLocaleString();
   document.getElementById('adm-stat-revenue').textContent=revenue.toLocaleString();
   document.getElementById('adm-stat-pending').textContent=pending;
-  // Sync indicator
+  // Sync indicator — always ON since Firebase URL is hardcoded
   var sb = document.getElementById('adm-sync-badge');
   if (sb) {
-    var fb = fbConfig();
-    if (fb) {
-      sb.style.color = '#7AE7B5';
-      sb.textContent = '🟢 SYNC ON · ' + fb.base.replace(/^https?:\/\//,'').slice(0,30) + '...';
-    } else {
-      sb.style.color = '#FFD580';
-      sb.textContent = '⚠️ SYNC OFF — ตั้งค่า Firebase ในเมนู ⚙️';
-    }
+    sb.style.color = '#7AE7B5';
+    var cfg = lsGet('settings') || {};
+    var url = (cfg.fbUrl || FB_DEFAULT_URL).replace(/^https?:\/\//,'');
+    sb.textContent = '🟢 SYNC ON · ' + url.slice(0,28) + '...';
   }
 }
 
@@ -1588,6 +1693,146 @@ function copyModalOrd() {
   navigator.clipboard.writeText(o.text||'').then(function(){alert('คัดลอกแล้ว!');});
 }
 
+function deleteOrder() {
+  var orders=lsGet('orders')||[]; var o=null;
+  for (var i=0; i<orders.length; i++) { if(orders[i].id===APP.viewOrdId){o=orders[i];break;} }
+  if (!o) return;
+  var label = o.branchName + ' Lot #' + o.lotNo + ' (' + o.total + ' ชิ้น · ' + o.deliveryDate + ')';
+  if (!confirm('🗑 ลบออเดอร์นี้?\n\n' + label + '\n\nไม่สามารถย้อนกลับได้')) return;
+  // Remove from local
+  var newOrds = orders.filter(function(x){ return x.id !== APP.viewOrdId; });
+  lsSet('orders', newOrds);
+  // Remove from Firebase
+  deleteOrderFromFirebase(APP.viewOrdId);
+  closeModal('modal-ord');
+  loadHistory();
+  loadAdminDash();
+}
+
+// ============================================================
+// EDIT ORDER (admin adjust qty after submit)
+// ============================================================
+function openEditOrder() {
+  var orders=lsGet('orders')||[]; var o=null;
+  for (var i=0; i<orders.length; i++) { if(orders[i].id===APP.viewOrdId){o=orders[i];break;} }
+  if (!o) return;
+
+  document.getElementById('edit-ord-branch').textContent =
+    o.branchName + ' · Lot #' + o.lotNo + ' · ส่ง ' + o.deliveryDate;
+
+  // Build stepper rows for each filling
+  var html = '';
+  for (var j=0; j<FILLINGS.length; j++) {
+    var f = FILLINGS[j];
+    var qty = (o.fillings && o.fillings[f.id]) || 0;
+    html += '<div class="edit-fill-row">';
+    html += '<div class="edit-fill-name">' + f.emoji + ' ' + f.name + '</div>';
+    html += '<div class="edit-fill-stepper">';
+    html += '<button class="stepper-btn" onclick="stepFill(\'' + f.id + '\',-10)" title="-10">−</button>';
+    html += '<div class="stepper-val" id="eqty-' + f.id + '">' + qty + '</div>';
+    html += '<button class="stepper-btn" onclick="stepFill(\'' + f.id + '\',+10)" title="+10">+</button>';
+    html += '</div>';
+    html += '</div>';
+  }
+  document.getElementById('edit-ord-rows').innerHTML = html;
+
+  calcEditSummary();
+  closeModal('modal-ord');
+  openModal('modal-edit-ord');
+}
+
+function stepFill(fid, delta) {
+  var el = document.getElementById('eqty-' + fid);
+  if (!el) return;
+  var cur = parseInt(el.textContent) || 0;
+  var next = Math.max(0, cur + delta);
+  el.textContent = next;
+  calcEditSummary();
+}
+
+function calcEditSummary() {
+  var total = 0;
+  for (var j=0; j<FILLINGS.length; j++) {
+    var el = document.getElementById('eqty-' + FILLINGS[j].id);
+    if (el) total += parseInt(el.textContent) || 0;
+  }
+  // Get original order for discount info
+  var orders = lsGet('orders')||[]; var o = null;
+  for (var i=0; i<orders.length; i++) { if(orders[i].id===APP.viewOrdId){o=orders[i];break;} }
+  var hasDisc = o ? !!o.hasDiscount : false;
+  var price = calcPrice(total, hasDisc);
+  var papG  = calcPaprikaG(total);
+
+  document.getElementById('edit-ord-total').textContent = total.toLocaleString() + ' ชิ้น';
+  document.getElementById('edit-ord-price').textContent = price.toLocaleString() + ' บาท' + (hasDisc ? ' (รวมส่วนลด 10%)' : '');
+  document.getElementById('edit-ord-pap').textContent   = papG > 0 ? (papG/1000).toFixed(1) + ' กก.' : '0 กก.';
+}
+
+function saveEditOrder() {
+  var orders = lsGet('orders')||[]; var idx = -1; var o = null;
+  for (var i=0; i<orders.length; i++) { if(orders[i].id===APP.viewOrdId){idx=i;o=orders[i];break;} }
+  if (!o || idx<0) { alert('ไม่พบออเดอร์'); return; }
+  if (!confirm('บันทึกการแก้ไขจำนวน?\n(ข้อความออเดอร์จะถูกสร้างใหม่)')) return;
+
+  // Collect new quantities
+  var newFills = {};
+  var total = 0;
+  for (var j=0; j<FILLINGS.length; j++) {
+    var el = document.getElementById('eqty-' + FILLINGS[j].id);
+    var qty = el ? (parseInt(el.textContent)||0) : 0;
+    newFills[FILLINGS[j].id] = qty;
+    total += qty;
+  }
+  if (total === 0) { alert('จำนวนรวมต้องมากกว่า 0 ชิ้น'); return; }
+
+  var hasDisc = !!o.hasDiscount;
+  var price   = calcPrice(total, hasDisc);
+  var papG    = calcPaprikaG(total);
+
+  // Rebuild order text (simple flat format for edit — no sub-locations)
+  var lines = [];
+  lines.push('สาขา ' + o.branchName);
+  lines.push('#' + o.lotNo + '  Date ' + o.orderDate);
+  if (hasDisc) lines.push('🎉 [ออเดอร์ส่วนลด 10%]');
+  lines.push('');
+  for (var k=0; k<FILLINGS.length; k++) {
+    var f = FILLINGS[k]; var q = newFills[f.id]||0;
+    if (q > 0) lines.push('ไส้' + f.name + '  ' + q + ' ชิ้น');
+  }
+  lines.push('รวม  ' + total + ' ชิ้น');
+  lines.push('ซองตามจำนวน');
+  if (papG > 0) lines.push('ปาปริก้า  ' + (papG/1000).toFixed(1) + ' กก.');
+  lines.push('');
+  lines.push('ยอดรวม  ' + price.toLocaleString() + ' บาท (ยังไม่รวม VAT)');
+  if (hasDisc) lines.push('(ราคารวมส่วนลด 10% แล้ว)');
+  lines.push('สถานะชำระ  ' + (PAY_LABELS[o.payStatus]||'รอชำระ'));
+  lines.push('');
+  lines.push('จัดส่งวันที่  ' + o.deliveryDate);
+  lines.push('[แก้ไขโดยแอดมิน]');
+  if (o.notes) lines.push('หมายเหตุ: ' + o.notes);
+
+  var newText = lines.join('\n');
+
+  // Patch order object
+  orders[idx].fillings    = newFills;
+  orders[idx].total       = total;
+  orders[idx].price       = price;
+  orders[idx].paprikaG    = papG;
+  orders[idx].text        = newText;
+  orders[idx].editedAt    = new Date().toLocaleString('th-TH');
+
+  // Also update per-location fillings to match (reset to single-location)
+  orders[idx].locations = [{name:'', fillings: newFills}];
+
+  lsSet('orders', orders);
+  // Sync edited order to Firebase
+  if (typeof syncOrderToFirebase === 'function') { syncOrderToFirebase(orders[idx]); }
+
+  closeModal('modal-edit-ord');
+  loadHistory();
+  alert('✅ บันทึกแก้ไขแล้ว!');
+}
+
 // ============================================================
 // CSV EXPORT
 // ============================================================
@@ -1662,14 +1907,11 @@ function loadSettingsPage() {
 function updateFbSyncStatus() {
   var el = document.getElementById('fb-sync-status');
   if (!el) return;
-  var fb = fbConfig();
-  if (!fb) {
-    el.innerHTML = '<span style="color:var(--orange)">⚠️ ยังไม่ได้ตั้ง Firebase URL — สาขาจะไม่ sync ข้ามอุปกรณ์</span>';
-    return;
-  }
   var ts = lsGet('branches_ts') || 0;
   var when = ts ? new Date(ts).toLocaleString('th-TH') : 'ยังไม่เคย sync';
-  el.innerHTML = '🟢 Sync ON · last: ' + when;
+  var cfg = lsGet('settings') || {};
+  var url = (cfg.fbUrl || FB_DEFAULT_URL).replace(/^https?:\/\//,'');
+  el.innerHTML = '🟢 Sync ON · ' + url.slice(0,35) + ' · last: ' + when;
 }
 
 function manualSyncBranches() {
@@ -1695,7 +1937,32 @@ function manualSyncBranches() {
   });
 }
 
-function forcePushBranches() {
+function manualPullOrders() {
+  var fb = fbConfig();
+  if (!fb) { alert('⚠️ กรุณาตั้งค่า Firebase URL ก่อน'); return; }
+  var el = document.getElementById('fb-sync-status');
+  if (el) el.innerHTML = '⏳ กำลังดึงออเดอร์จาก cloud...';
+  var ep = fbEndpoint('orders');
+  fetch(ep).then(function(r){ return r.ok ? r.json() : null; }).then(function(data){
+    if (!data) {
+      if (el) el.innerHTML = 'ℹ️ ยังไม่มีออเดอร์บน cloud';
+      return;
+    }
+    var remoteOrds = Object.values(data).filter(function(o){ return o && o.id; });
+    var localOrds = lsGet('orders') || [];
+    if (!Array.isArray(localOrds)) localOrds = [];
+    var map = {};
+    for (var i=0; i<localOrds.length; i++) { if(localOrds[i].id) map[localOrds[i].id] = localOrds[i]; }
+    for (var j=0; j<remoteOrds.length; j++) { if(remoteOrds[j].id) map[remoteOrds[j].id] = remoteOrds[j]; }
+    var merged = Object.values(map);
+    merged.sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
+    lsSet('orders', merged);
+    if (el) el.innerHTML = '✅ ดึงออเดอร์สำเร็จ! (' + merged.length + ' รายการ)';
+    setTimeout(updateFbSyncStatus, 2500);
+  }).catch(function(e){
+    if (el) el.innerHTML = '❌ ' + e.message;
+  });
+}
   var fb = fbConfig();
   if (!fb) { alert('⚠️ กรุณาตั้งค่า Firebase URL ก่อน'); return; }
   if (!confirm('ส่งรายการสาขาทั้งหมดขึ้น cloud?\n(จะทับข้อมูลเดิมบน cloud)')) return;
@@ -1721,7 +1988,9 @@ function saveTgSettings() {
   var cfg=lsGet('settings')||{};
   cfg.tgBotToken=document.getElementById('cfg-tg-token').value.trim();
   cfg.tgChatId=document.getElementById('cfg-tg-chat').value.trim();
-  lsSet('settings',cfg); alert('✅ บันทึก Telegram แล้ว');
+  lsSet('settings',cfg);
+  pushConfigToFirebase(); // sync to all devices
+  alert('✅ บันทึก Telegram แล้ว — sync ไปทุกเครื่องแล้ว');
 }
 function testTelegram() {
   var cfg=lsGet('settings')||{};
@@ -1754,8 +2023,12 @@ function testFirebase() {
 function saveAdminPw() {
   var pw=document.getElementById('cfg-new-pw').value;
   if (!pw||pw.length<4){alert('รหัสผ่านต้องมีอย่างน้อย 4 ตัว');return;}
-  var cfg=lsGet('settings')||{}; cfg.adminPassword=pw; lsSet('settings',cfg);
-  document.getElementById('cfg-new-pw').value=''; alert('✅ เปลี่ยนรหัสผ่านแล้ว');
+  var cfg=lsGet('settings')||{};
+  cfg.adminPassword=pw;
+  lsSet('settings',cfg);
+  pushConfigToFirebase(); // sync to all devices
+  document.getElementById('cfg-new-pw').value='';
+  alert('✅ เปลี่ยนรหัสผ่านแล้ว — sync ไปทุกเครื่องแล้ว');
 }
 function clearAllData() {
   if (!confirm('⚠️ ล้างข้อมูลทั้งหมด?')) return;
