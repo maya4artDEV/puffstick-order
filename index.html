@@ -596,6 +596,10 @@ textarea.form-input{resize:none;line-height:1.5}
 </div>
 
 <script>
+// ─── FIREBASE HARDCODED (ลูกค้าไม่ต้องตั้ง) ─────────────────────
+var FB_DEFAULT_URL  = 'https://puff-stick-fc-order-default-rtdb.asia-southeast1.firebasedatabase.app';
+var FB_DEFAULT_PATH = 'puffstick';
+
 // ============================================================
 // CONSTANTS
 // ============================================================
@@ -1406,10 +1410,7 @@ function confirmLogout() {
 // ============================================================
 // FIREBASE REST
 // ============================================================
-// ─── FIREBASE HARDCODED (ลูกค้าไม่ต้องตั้ง) ─────────────────
-var FB_DEFAULT_URL  = 'https://puff-stick-fc-order-default-rtdb.asia-southeast1.firebasedatabase.app';
-var FB_DEFAULT_PATH = 'puffstick';
-
+// ─── FIREBASE REST ──────────────────────────────────────────
 function getFbCfg() {
   var c = lsGet('settings') || {};
   return {
