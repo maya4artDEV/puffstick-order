@@ -308,6 +308,31 @@ textarea.form-input{resize:none;line-height:1.5}
     </div>
 
     <div class="card">
+      <div class="card-title">📦 กล่องบรรจุ (ขายแยก)</div>
+      <div class="alert alert-info text-sm mb-10">ราคาไม่รวมค่าส่ง · กล่องเล็ก 4.5 บ./ใบ · กล่องใหญ่ 6 บ./ใบ</div>
+      <div class="filling-row" style="padding:6px 0;">
+        <span class="filling-name text-sm">📦 กล่องเล็ก (4.5 บ.)</span>
+        <div class="qty-wrap">
+          <button class="qty-btn" onclick="adjBox('small',-10)">−10</button>
+          <input class="qty-input" type="number" id="box-small" value="0" min="0" step="1" inputmode="numeric" onchange="onBoxChange()" style="width:64px;">
+          <button class="qty-btn" onclick="adjBox('small',10)">+10</button>
+        </div>
+      </div>
+      <div class="filling-row" style="padding:6px 0;border-bottom:none;">
+        <span class="filling-name text-sm">📦 กล่องใหญ่ (6 บ.)</span>
+        <div class="qty-wrap">
+          <button class="qty-btn" onclick="adjBox('large',-10)">−10</button>
+          <input class="qty-input" type="number" id="box-large" value="0" min="0" step="1" inputmode="numeric" onchange="onBoxChange()" style="width:64px;">
+          <button class="qty-btn" onclick="adjBox('large',10)">+10</button>
+        </div>
+      </div>
+      <div class="flex-between text-sm mt-8" style="padding-top:8px;border-top:1px solid var(--border);">
+        <span class="text-gray">ค่ากล่องรวม</span>
+        <span class="text-bold" id="box-total-price">0 บาท</span>
+      </div>
+    </div>
+
+    <div class="card">
       <div class="card-title">💳 สถานะการชำระเงิน</div>
       <div class="pay-chips">
         <div class="pay-chip" id="pc-paid"    onclick="selPay('paid')">✅ ชำระแล้ว</div>
@@ -583,10 +608,32 @@ textarea.form-input{resize:none;line-height:1.5}
     <div class="alert alert-warning text-sm mb-10">แก้ไขจำนวนกรณีสาขาสั่งผิด<br>ระบบจะคำนวณยอด ปาปริก้า และข้อความใหม่อัตโนมัติ</div>
     <div id="edit-ord-branch" class="text-bold mb-8" style="color:var(--blue-deep);"></div>
     <div id="edit-ord-rows"></div>
-    <div class="card" style="margin-top:12px;padding:10px 12px;background:var(--blue-tint);">
+
+    <div class="card" style="margin-top:12px;padding:10px 12px;">
+      <div class="card-title" style="font-size:13px;margin-bottom:8px;">📦 กล่องบรรจุ</div>
+      <div class="filling-row" style="padding:5px 0;">
+        <span class="filling-name text-sm">กล่องเล็ก (4.5 บ.)</span>
+        <div class="qty-wrap">
+          <button class="qty-btn" onclick="adjEditBox('small',-10)">−10</button>
+          <input class="qty-input" type="number" id="edit-box-small" value="0" min="0" step="1" inputmode="numeric" oninput="calcEditSummary()" style="width:64px;">
+          <button class="qty-btn" onclick="adjEditBox('small',10)">+10</button>
+        </div>
+      </div>
+      <div class="filling-row" style="padding:5px 0;border-bottom:none;">
+        <span class="filling-name text-sm">กล่องใหญ่ (6 บ.)</span>
+        <div class="qty-wrap">
+          <button class="qty-btn" onclick="adjEditBox('large',-10)">−10</button>
+          <input class="qty-input" type="number" id="edit-box-large" value="0" min="0" step="1" inputmode="numeric" oninput="calcEditSummary()" style="width:64px;">
+          <button class="qty-btn" onclick="adjEditBox('large',10)">+10</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:10px;padding:10px 12px;background:var(--blue-tint);">
       <div class="flex-between mb-4"><span class="text-sm text-gray">รวม</span><span class="text-bold" id="edit-ord-total">0 ชิ้น</span></div>
       <div class="flex-between mb-4"><span class="text-sm text-gray">ราคา (ไม่รวม VAT)</span><span class="text-bold" id="edit-ord-price">0 บาท</span></div>
-      <div class="flex-between"><span class="text-sm text-gray">ปาปริก้า</span><span class="text-bold" id="edit-ord-pap">0 ก.</span></div>
+      <div class="flex-between mb-4"><span class="text-sm text-gray">ปาปริก้า</span><span class="text-bold" id="edit-ord-pap">0 ก.</span></div>
+      <div class="flex-between"><span class="text-sm text-gray">ค่ากล่อง</span><span class="text-bold" id="edit-ord-boxprice">0 บาท</span></div>
     </div>
     <div class="grid-2 mt-12">
       <button class="btn btn-ghost" onclick="closeModal('modal-edit-ord')">ยกเลิก</button>
@@ -622,6 +669,10 @@ var DISC_THRESH  = 4500;
 var DISC_RATE    = 0.10;
 var BOX_CAP      = 300;
 var DRY_PER_BOX  = 2;
+
+// Packaging boxes (sold to branches, separate from foam shipping boxes)
+var BOX_SMALL_PRICE = 4.5;   // บาท/ใบ
+var BOX_LARGE_PRICE = 6;     // บาท/ใบ
 
 var PAY_LABELS = {paid:'✅ ชำระแล้ว', pending:'⏳ รอชำระ', partial:'🔄 แบ่งชำระ', after:'📅 ชำระหลังรับ 1 วัน'};
 var PAY_CLS    = {paid:'sel-paid', pending:'sel-pending', partial:'sel-partial', after:'sel-after'};
@@ -935,6 +986,13 @@ function calcPrice(total, hasDisc) {
 function getQty(id) { var el = document.getElementById('fq_'+id); return el ? (parseInt(el.value)||0) : 0; }
 function getExtraPap() { var el = document.getElementById('extra-pap'); return el ? (parseFloat(el.value)||0) : 0; }
 
+// Packaging boxes (sold to branches)
+function getBoxSmall() { var el = document.getElementById('box-small'); return el ? Math.max(0, parseInt(el.value)||0) : 0; }
+function getBoxLarge() { var el = document.getElementById('box-large'); return el ? Math.max(0, parseInt(el.value)||0) : 0; }
+function calcBoxPrice() {
+  return getBoxSmall() * BOX_SMALL_PRICE + getBoxLarge() * BOX_LARGE_PRICE;
+}
+
 // ============================================================
 // NAV
 // ============================================================
@@ -1003,6 +1061,12 @@ function initOrderPage() {
   var tom = new Date(); tom.setDate(tom.getDate()+1);
   document.getElementById('del-date').value = tom.toISOString().split('T')[0];
   document.getElementById('del-date').min   = new Date().toISOString().split('T')[0];
+  // Reset auxiliary inputs
+  var ep = document.getElementById('extra-pap'); if (ep) ep.value = 0;
+  var bs = document.getElementById('box-small'); if (bs) bs.value = 0;
+  var bl = document.getElementById('box-large'); if (bl) bl.value = 0;
+  var nt = document.getElementById('o-notes');   if (nt) nt.value = '';
+  onBoxChange();
   checkDate(); loadAccumBar(); checkDiscBadge(); updateSummary(); selPay('pending');
 }
 
@@ -1110,6 +1174,20 @@ function adjExtraPap(delta) {
   el.value = Math.max(0, Math.round(((parseFloat(el.value)||0)+delta)*10)/10);
 }
 function snapExtraPap(el) { el.value = Math.max(0, parseFloat(el.value)||0); }
+
+// Packaging boxes (sold to branches) — separate from foam shipping boxes
+function adjBox(size, delta) {
+  var id = (size === 'small') ? 'box-small' : 'box-large';
+  var el = document.getElementById(id); if (!el) return;
+  el.value = Math.max(0, (parseInt(el.value)||0) + delta);
+  onBoxChange();
+}
+function onBoxChange() {
+  var s = document.getElementById('box-small'); if (s) s.value = Math.max(0, parseInt(s.value)||0);
+  var l = document.getElementById('box-large'); if (l) l.value = Math.max(0, parseInt(l.value)||0);
+  var btp = document.getElementById('box-total-price');
+  if (btp) btp.textContent = calcBoxPrice().toLocaleString() + ' บาท';
+}
 
 function calcTotal() {
   // Save current tab first, then sum across all locations
@@ -1253,9 +1331,24 @@ function buildOrderText() {
   if (papG>0) { lines.push('ปาปริก้า  '+(papG/1000).toFixed(1)+' กก.'); }
   if (extraPap>0) { lines.push('ปาปริก้าพิเศษ  '+extraPap.toFixed(1)+' กก.  → รอใบแจ้งราคาจากผู้ประสานงาน'); }
 
+  // Packaging boxes (sold to branches, separate from pricing)
+  var boxSm = getBoxSmall(); var boxLg = getBoxLarge(); var boxPrice = calcBoxPrice();
+  if (boxSm > 0 || boxLg > 0) {
+    lines.push('');
+    lines.push('📦 กล่องบรรจุ (ขายแยก ไม่รวมค่าส่ง)');
+    if (boxSm > 0) { lines.push('  กล่องเล็ก  '+boxSm+' ใบ × '+BOX_SMALL_PRICE+' = '+(boxSm*BOX_SMALL_PRICE).toLocaleString()+' บาท'); }
+    if (boxLg > 0) { lines.push('  กล่องใหญ่  '+boxLg+' ใบ × '+BOX_LARGE_PRICE+' = '+(boxLg*BOX_LARGE_PRICE).toLocaleString()+' บาท'); }
+    lines.push('  รวมค่ากล่อง  '+boxPrice.toLocaleString()+' บาท');
+  }
+
   lines.push('');
   lines.push('ยอดรวม  '+price.toLocaleString()+' บาท (ยังไม่รวม VAT)');
   if (hasDisc) { lines.push('(ราคารวมส่วนลด 10% แล้ว)'); }
+  if (boxPrice > 0) {
+    var grand = price + boxPrice;
+    lines.push('+ ค่ากล่อง  '+boxPrice.toLocaleString()+' บาท');
+    lines.push('= ยอดรวมทั้งหมด  '+grand.toLocaleString()+' บาท');
+  }
   lines.push('สถานะชำระ  '+(PAY_LABELS[APP.payStatus]||'รอชำระ'));
   lines.push('');
   lines.push('จัดส่งวันที่  '+dStr);
@@ -1278,6 +1371,7 @@ function buildOrderText() {
     fillings:fillingsFlat,
     locations: locs.map(function(l){ return {name:l.name, fillings:l.fillings}; }),
     total:total, paprikaG:papG, extraPapKg:extraPap,
+    boxSmall:boxSm, boxLarge:boxLg, boxPrice:boxPrice,
     hasDiscount:hasDisc, price:price, payStatus:APP.payStatus,
     notes:notes, text:txt, ts:Date.now()
   };
@@ -1737,9 +1831,20 @@ function openEditOrder() {
   }
   document.getElementById('edit-ord-rows').innerHTML = html;
 
+  // Populate box inputs from existing order (or 0 if old order without box data)
+  var bs = document.getElementById('edit-box-small'); if (bs) bs.value = o.boxSmall || 0;
+  var bl = document.getElementById('edit-box-large'); if (bl) bl.value = o.boxLarge || 0;
+
   calcEditSummary();
   closeModal('modal-ord');
   openModal('modal-edit-ord');
+}
+
+function adjEditBox(size, delta) {
+  var id = (size === 'small') ? 'edit-box-small' : 'edit-box-large';
+  var el = document.getElementById(id); if (!el) return;
+  el.value = Math.max(0, (parseInt(el.value)||0) + delta);
+  calcEditSummary();
 }
 
 function stepFill(fid, delta) {
@@ -1764,9 +1869,20 @@ function calcEditSummary() {
   var price = calcPrice(total, hasDisc);
   var papG  = calcPaprikaG(total);
 
+  // Box price
+  var bs = document.getElementById('edit-box-small');
+  var bl = document.getElementById('edit-box-large');
+  if (bs) bs.value = Math.max(0, parseInt(bs.value)||0);
+  if (bl) bl.value = Math.max(0, parseInt(bl.value)||0);
+  var boxSm = bs ? (parseInt(bs.value)||0) : 0;
+  var boxLg = bl ? (parseInt(bl.value)||0) : 0;
+  var boxPrice = boxSm * BOX_SMALL_PRICE + boxLg * BOX_LARGE_PRICE;
+
   document.getElementById('edit-ord-total').textContent = total.toLocaleString() + ' ชิ้น';
   document.getElementById('edit-ord-price').textContent = price.toLocaleString() + ' บาท' + (hasDisc ? ' (รวมส่วนลด 10%)' : '');
   document.getElementById('edit-ord-pap').textContent   = papG > 0 ? (papG/1000).toFixed(1) + ' กก.' : '0 กก.';
+  var bpEl = document.getElementById('edit-ord-boxprice');
+  if (bpEl) bpEl.textContent = boxPrice.toLocaleString() + ' บาท';
 }
 
 function saveEditOrder() {
@@ -1790,6 +1906,11 @@ function saveEditOrder() {
   var price   = calcPrice(total, hasDisc);
   var papG    = calcPaprikaG(total);
 
+  // Box quantities
+  var boxSm = parseInt(document.getElementById('edit-box-small').value)||0;
+  var boxLg = parseInt(document.getElementById('edit-box-large').value)||0;
+  var boxPrice = boxSm * BOX_SMALL_PRICE + boxLg * BOX_LARGE_PRICE;
+
   // Rebuild order text (simple flat format for edit — no sub-locations)
   var lines = [];
   lines.push('สาขา ' + o.branchName);
@@ -1803,9 +1924,20 @@ function saveEditOrder() {
   lines.push('รวม  ' + total + ' ชิ้น');
   lines.push('ซองตามจำนวน');
   if (papG > 0) lines.push('ปาปริก้า  ' + (papG/1000).toFixed(1) + ' กก.');
+  if (boxSm > 0 || boxLg > 0) {
+    lines.push('');
+    lines.push('📦 กล่องบรรจุ (ขายแยก ไม่รวมค่าส่ง)');
+    if (boxSm > 0) lines.push('  กล่องเล็ก  '+boxSm+' ใบ × '+BOX_SMALL_PRICE+' = '+(boxSm*BOX_SMALL_PRICE).toLocaleString()+' บาท');
+    if (boxLg > 0) lines.push('  กล่องใหญ่  '+boxLg+' ใบ × '+BOX_LARGE_PRICE+' = '+(boxLg*BOX_LARGE_PRICE).toLocaleString()+' บาท');
+    lines.push('  รวมค่ากล่อง  '+boxPrice.toLocaleString()+' บาท');
+  }
   lines.push('');
   lines.push('ยอดรวม  ' + price.toLocaleString() + ' บาท (ยังไม่รวม VAT)');
   if (hasDisc) lines.push('(ราคารวมส่วนลด 10% แล้ว)');
+  if (boxPrice > 0) {
+    lines.push('+ ค่ากล่อง  '+boxPrice.toLocaleString()+' บาท');
+    lines.push('= ยอดรวมทั้งหมด  '+(price+boxPrice).toLocaleString()+' บาท');
+  }
   lines.push('สถานะชำระ  ' + (PAY_LABELS[o.payStatus]||'รอชำระ'));
   lines.push('');
   lines.push('จัดส่งวันที่  ' + o.deliveryDate);
@@ -1819,6 +1951,9 @@ function saveEditOrder() {
   orders[idx].total       = total;
   orders[idx].price       = price;
   orders[idx].paprikaG    = papG;
+  orders[idx].boxSmall    = boxSm;
+  orders[idx].boxLarge    = boxLg;
+  orders[idx].boxPrice    = boxPrice;
   orders[idx].text        = newText;
   orders[idx].editedAt    = new Date().toLocaleString('th-TH');
 
