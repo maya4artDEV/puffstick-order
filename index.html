@@ -155,12 +155,15 @@ textarea.form-input{resize:none;line-height:1.5}
 .content{flex:1;padding:14px 16px;overflow-y:auto}
 
 /* ─── Sub-location styles ─── */
-.loc-tab-bar{display:flex;gap:6px;overflow-x:auto;padding-bottom:4px;-webkit-overflow-scrolling:touch;scrollbar-width:none;}
+.loc-wrap{position:relative;margin:0 -14px;padding:0 14px;}
+.loc-wrap::after{content:'';position:absolute;right:0;top:0;bottom:4px;width:28px;background:linear-gradient(to right,transparent,#fff 70%);pointer-events:none;border-radius:0 12px 12px 0;}
+.loc-tab-bar{display:flex;gap:8px;overflow-x:auto;overflow-y:hidden;padding:2px 4px 8px 0;-webkit-overflow-scrolling:touch;scrollbar-width:none;scroll-snap-type:x proximity;scroll-padding-left:4px;}
 .loc-tab-bar::-webkit-scrollbar{display:none;}
-.loc-tab{flex-shrink:0;padding:7px 14px;border-radius:20px;border:1.5px solid var(--border);background:#fff;font-size:13px;font-weight:600;color:var(--gray);cursor:pointer;white-space:nowrap;transition:all .18s;}
-.loc-tab.active{border-color:var(--brown);background:var(--brown);color:#fff;}
-.loc-tab-add{flex-shrink:0;padding:7px 12px;border-radius:20px;border:1.5px dashed var(--gold);background:transparent;font-size:13px;font-weight:700;color:var(--gold);cursor:pointer;white-space:nowrap;}
-.loc-tab-add:active{background:var(--cream2);}
+.loc-tab{flex:0 0 auto;min-height:44px;padding:10px 18px;border-radius:22px;border:1.5px solid var(--border);background:#fff;font-size:14px;font-weight:600;color:var(--gray);cursor:pointer;white-space:nowrap;transition:transform .12s ease,background .18s,color .18s,border-color .18s;scroll-snap-align:start;user-select:none;-webkit-tap-highlight-color:transparent;display:inline-flex;align-items:center;justify-content:center;}
+.loc-tab:active{transform:scale(.95);}
+.loc-tab.active{border-color:var(--brown);background:var(--brown);color:#fff;box-shadow:0 2px 8px rgba(139,69,19,.25);}
+.loc-tab-add{flex:0 0 auto;min-height:44px;padding:10px 16px;border-radius:22px;border:1.5px dashed var(--gold);background:transparent;font-size:14px;font-weight:700;color:var(--gold);cursor:pointer;white-space:nowrap;display:inline-flex;align-items:center;justify-content:center;-webkit-tap-highlight-color:transparent;transition:transform .12s;}
+.loc-tab-add:active{background:var(--cream2);transform:scale(.95);}
 .loc-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;}
 .loc-name-edit{flex:1;font-size:14px;font-weight:700;border:none;border-bottom:2px solid var(--border);background:transparent;color:var(--brown-dark);padding:3px 0;font-family:'Noto Sans Thai','Poppins',sans-serif;}
 .loc-name-edit:focus{outline:none;border-bottom-color:var(--brown);}
@@ -274,15 +277,25 @@ textarea.form-input{resize:none;line-height:1.5}
 
     <div class="card">
       <div class="card-title">📅 วันที่ต้องการรับขนม</div>
-      <input type="date" class="form-input" id="del-date" onchange="checkDate()">
+      <div class="alert alert-info text-sm mb-10" style="margin-top:-2px;">
+        ⏰ ค่าเริ่มต้น: <strong>พรุ่งนี้</strong> — แตะวันที่ด้านล่างเพื่อเปลี่ยนได้
+      </div>
+      <input type="date" class="form-input" id="del-date" onchange="checkDate()"
+             style="font-size:16px;padding:14px 12px;min-height:48px;font-weight:600;color:var(--brown-dark);text-align:center;cursor:pointer;">
+      <div id="del-date-thai" class="text-sm" style="text-align:center;margin-top:6px;color:var(--gray);font-weight:500;"></div>
       <div id="date-warn" class="alert alert-warning mt-8" style="display:none;">⚠️ ควรสั่งล่วงหน้าอย่างน้อย 1 วัน</div>
       <div id="date-ok" class="alert alert-success mt-8" style="display:none;">✅ สั่งล่วงหน้า <strong id="days-num"></strong> วัน</div>
     </div>
 
     <!-- Location tab bar -->
     <div class="card" style="padding:10px 14px 12px;" id="loc-card">
-      <div class="card-title" style="margin-bottom:8px;">📍 จุดขาย</div>
-      <div class="loc-tab-bar" id="loc-tab-bar"></div>
+      <div class="card-title" style="margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">
+        <span>📍 จุดขาย</span>
+        <span id="loc-count-hint" class="text-xs text-gray" style="font-weight:500;"></span>
+      </div>
+      <div class="loc-wrap">
+        <div class="loc-tab-bar" id="loc-tab-bar"></div>
+      </div>
     </div>
 
     <div class="card">
@@ -1089,13 +1102,36 @@ function renderLocTabs() {
     var html = '';
     for (var i = 0; i < locs.length; i++) {
       var label = locs[i].name || ('จุด '+(i+1));
+      var safeLabel = label.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
       var cls = 'loc-tab' + (i === APP.currentLocIdx ? ' active' : '');
-      html += '<div class="'+cls+'" onclick="switchLoc('+i+')">'+label+'</div>';
+      html += '<div class="'+cls+'" onclick="switchLoc('+i+')">'+safeLabel+'</div>';
     }
     html += '<div class="loc-tab-add" onclick="addNewLoc()">＋ จุด</div>';
     document.getElementById('loc-tab-bar').innerHTML = html;
     nameInp.value = locs[APP.currentLocIdx].name;
     delBtn.style.display = locs.length > 1 ? 'inline-block' : 'none';
+
+    // Show count hint with scroll instruction if many
+    var hint = document.getElementById('loc-count-hint');
+    if (hint) {
+      if (locs.length >= 4) {
+        hint.textContent = locs.length + ' จุด · ← เลื่อนเลือก →';
+      } else {
+        hint.textContent = locs.length + ' จุด';
+      }
+    }
+
+    // Auto-scroll the active pill into view (helps when many sub-locations)
+    setTimeout(function() {
+      var bar = document.getElementById('loc-tab-bar');
+      if (!bar) return;
+      var active = bar.querySelector('.loc-tab.active');
+      if (active && active.scrollIntoView) {
+        try {
+          active.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+        } catch(e) {}
+      }
+    }, 80);
   }
 }
 
@@ -1221,12 +1257,41 @@ function updateSummary() {
 
 function checkDate() {
   var v=document.getElementById('del-date').value;
-  var wEl=document.getElementById('date-warn'); var oEl=document.getElementById('date-ok');
-  if (!v) { wEl.style.display='none'; oEl.style.display='none'; return; }
-  var today=new Date(); today.setHours(0,0,0,0);
-  var diff=Math.round((new Date(v)-today)/86400000);
-  if (diff < 1) { wEl.style.display='block'; oEl.style.display='none'; }
-  else { wEl.style.display='none'; oEl.style.display='block'; document.getElementById('days-num').textContent=diff; }
+  var wEl=document.getElementById('date-warn');
+  var oEl=document.getElementById('date-ok');
+  var thaiEl=document.getElementById('del-date-thai');
+  if (!v) {
+    wEl.style.display='none'; oEl.style.display='none';
+    if (thaiEl) thaiEl.textContent='';
+    return;
+  }
+  var d=new Date(v); var today=new Date(); today.setHours(0,0,0,0);
+  var diff=Math.round((d-today)/86400000);
+
+  // Thai date label
+  if (thaiEl) {
+    var thaiMonths = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+    var dayNames = ['อาทิตย์','จันทร์','อังคาร','พุธ','พฤหัสบดี','ศุกร์','เสาร์'];
+    var thaiYear = (d.getFullYear()+543)%100;
+    var dayLabel = dayNames[d.getDay()];
+    var dateStr = 'วัน'+dayLabel+'ที่ '+d.getDate()+' '+thaiMonths[d.getMonth()]+' '+thaiYear;
+    var hint = '';
+    if (diff === 0) hint = ' · วันนี้';
+    else if (diff === 1) hint = ' · พรุ่งนี้ (ค่าเริ่มต้น)';
+    else if (diff === 2) hint = ' · มะรืน';
+    else if (diff > 2) hint = ' · อีก '+diff+' วัน';
+    else hint = ' · ⚠️ ผ่านมาแล้ว';
+    thaiEl.textContent = '📦 '+dateStr+hint;
+  }
+
+  if (diff < 1) {
+    wEl.style.display='block';
+    oEl.style.display='none';
+  } else {
+    wEl.style.display='none';
+    oEl.style.display='block';
+    document.getElementById('days-num').textContent=diff;
+  }
 }
 
 function loadAccumBar() {
