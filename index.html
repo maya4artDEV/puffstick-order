@@ -1841,9 +1841,20 @@ function showOrdDetail(id) {
 
 function updatePayStatus(status) {
   var id=APP.viewOrdId; if (!id) return;
-  var orders=lsGet('orders')||[];
-  for (var i=0; i<orders.length; i++) { if(orders[i].id===id){orders[i].payStatus=status;break;} }
-  lsSet('orders',orders); selModalPay(status); loadHistory();
+  var orders=lsGet('orders')||[]; var updated=null;
+  for (var i=0; i<orders.length; i++) {
+    if(orders[i].id===id){
+      orders[i].payStatus=status;
+      updated=orders[i];
+      break;
+    }
+  }
+  lsSet('orders',orders);
+  // Push to Firebase so it survives reload (other devices get the update too)
+  if (updated && typeof syncOrderToFirebase === 'function') {
+    syncOrderToFirebase(updated);
+  }
+  selModalPay(status); loadHistory();
 }
 
 function copyModalOrd() {
