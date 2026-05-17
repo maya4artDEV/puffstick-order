@@ -273,6 +273,9 @@ textarea.form-input{resize:none;line-height:1.5}
       </div>
       <div class="prog-wrap"><div class="prog-bar" id="accum-bar" style="width:0%"></div></div>
       <div class="text-sm text-gray mt-8" id="accum-note">สะสมครบ 4,500 ชิ้น รับส่วนลด 10% ลอตถัดไป</div>
+      <div class="mt-10" style="text-align:center;">
+        <a onclick="goBranchHistory()" style="font-size:13px;font-weight:600;color:var(--brown);cursor:pointer;text-decoration:underline;">📋 ดูประวัติออเดอร์ของฉัน →</a>
+      </div>
     </div>
 
     <div class="card">
@@ -409,6 +412,33 @@ textarea.form-input{resize:none;line-height:1.5}
     </div>
     <button class="btn btn-success" onclick="doConfirmOrder()">✅ ยืนยันและบันทึกออเดอร์</button>
     <button class="btn btn-ghost mt-10" onclick="goPage('page-order')">← แก้ไขออเดอร์</button>
+  </div>
+</div>
+
+<!-- BRANCH HISTORY (branch sees own orders) -->
+<div id="page-br-history" class="page">
+  <div class="hdr">
+    <button class="btn-back" onclick="goPage('page-order')">←</button>
+    <div style="flex:1;">
+      <div class="hdr-title">📋 ประวัติของฉัน</div>
+      <div class="hdr-sub" id="br-hist-sub">กำลังโหลด...</div>
+    </div>
+  </div>
+  <div class="scroll-body">
+    <div class="card" style="padding:12px 14px;">
+      <div class="flex-between mb-8" style="align-items:flex-start;">
+        <div>
+          <div class="text-xs text-gray">เดือนนี้</div>
+          <div style="font-size:20px;font-weight:800;color:var(--brown);" id="br-hist-total">0 ชิ้น</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="text-xs text-gray">เป้าหมายส่วนลด</div>
+          <div class="text-sm text-bold" id="br-hist-rem">เหลืออีก 4,500 ชิ้น</div>
+        </div>
+      </div>
+      <div class="prog-wrap"><div class="prog-bar" id="br-hist-bar" style="width:0%"></div></div>
+    </div>
+    <div id="br-hist-list"></div>
   </div>
 </div>
 
@@ -610,6 +640,18 @@ textarea.form-input{resize:none;line-height:1.5}
     <div class="grid-2 mt-8">
       <button class="btn btn-primary" onclick="copyModalOrd()">📋 คัดลอกข้อความ</button>
       <button class="btn btn-danger btn-sm" onclick="deleteOrder()" style="background:var(--red);color:#fff;">🗑 ลบออเดอร์นี้</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL: BRANCH ORDER VIEW (read-only) -->
+<div class="modal-bg" id="modal-br-ord">
+  <div class="modal-box">
+    <div class="modal-title">📋 รายละเอียดออเดอร์</div>
+    <div id="mod-br-ord-body"></div>
+    <div class="grid-2 mt-12">
+      <button class="btn btn-ghost" onclick="closeModal('modal-br-ord')">ปิด</button>
+      <button class="btn btn-primary" onclick="copyBranchOrd()">📋 คัดลอกข้อความ</button>
     </div>
   </div>
 </div>
@@ -1022,6 +1064,114 @@ function goPage(id) {
 function padZ(n) { return n < 10 ? '0'+n : ''+n; }
 function toThaiDate(d) { return padZ(d.getDate())+'/'+padZ(d.getMonth()+1)+'/'+((d.getFullYear()+543)%100); }
 function getMonthKey() { var d=new Date(); return d.getFullYear()+'-'+padZ(d.getMonth()+1); }
+
+// ─── BRANCH'S OWN HISTORY ───────────────────────────────────────
+function goBranchHistory() {
+  if (!APP.branch) { alert('กรุณา login สาขาก่อน'); return; }
+  loadBranchHistory();
+  goPage('page-br-history');
+}
+
+function loadBranchHistory() {
+  var b = APP.branch;
+  if (!b) return;
+  var orders = lsGet('orders') || [];
+  if (!Array.isArray(orders)) orders = [];
+  var mine = orders.filter(function(o){ return o.branchId === b.id; });
+  // Sort newest first
+  mine.sort(function(a,c){
+    var ta = parseInt(String(a.id||'o0').slice(1), 10) || 0;
+    var tc = parseInt(String(c.id||'o0').slice(1), 10) || 0;
+    return tc - ta;
+  });
+
+  // Monthly progress
+  var ba = computeMonthlyAccum(b.id);
+  var pct = Math.min(100,(ba.total/DISC_THRESH)*100);
+  document.getElementById('br-hist-total').textContent = ba.total.toLocaleString()+' ชิ้น';
+  var remEl = document.getElementById('br-hist-rem');
+  if (ba.discountAvailable) { remEl.innerHTML='<span style="color:var(--green);">💰 ได้ส่วนลด 10%</span>'; }
+  else { remEl.textContent = 'เหลืออีก '+(DISC_THRESH-ba.total).toLocaleString()+' ชิ้น'; }
+  document.getElementById('br-hist-bar').style.width = pct.toFixed(1)+'%';
+  document.getElementById('br-hist-sub').textContent = b.name + ' · ทั้งหมด '+mine.length+' ออเดอร์';
+
+  // List
+  var listEl = document.getElementById('br-hist-list');
+  if (!mine.length) {
+    listEl.innerHTML = '<div class="alert alert-info">ยังไม่มีออเดอร์ — สั่งครั้งแรกเลย!</div>';
+    return;
+  }
+  var html = '';
+  var show = mine.slice(0, 50);
+  for (var i = 0; i < show.length; i++) {
+    var o = show[i];
+    var payBCls = o.payStatus==='paid' ? 'badge-green' : o.payStatus==='after' ? 'badge-gray' : o.payStatus==='partial' ? 'badge-blue' : 'badge-orange';
+    html += '<div class="ord-item" onclick="showBrOrdDetail(\''+o.id+'\')">';
+    html += '<div class="flex-between mb-8"><span class="ord-lot">Lot #'+o.lotNo+'</span><span class="text-xs text-gray">'+(o.orderDate||'')+'</span></div>';
+    html += '<div class="flex-between mb-8">';
+    html += '<span class="text-bold">'+(o.total||0).toLocaleString()+' ชิ้น &nbsp;·&nbsp; '+(o.price||0).toLocaleString()+' บ.</span>';
+    html += (o.hasDiscount ? '<span class="badge badge-gold">💰 ส่วนลด</span>' : '');
+    html += '</div>';
+    html += '<div class="flex-between">';
+    html += '<span class="text-xs text-gray">📦 ส่ง '+(o.deliveryDate||'')+'</span>';
+    html += '<span class="badge '+payBCls+'" style="font-size:10px;">'+(PAY_LABELS[o.payStatus]||o.payStatus||'—')+'</span>';
+    html += '</div></div>';
+  }
+  if (mine.length > 50) {
+    html += '<div class="alert alert-info text-sm">แสดง 50 รายการล่าสุด (ทั้งหมด '+mine.length+' รายการ)</div>';
+  }
+  listEl.innerHTML = html;
+}
+
+function showBrOrdDetail(id) {
+  var orders = lsGet('orders') || []; var o = null;
+  for (var i=0; i<orders.length; i++) { if(orders[i].id===id){ o=orders[i]; break; } }
+  if (!o) return;
+  document.getElementById('mod-br-ord-body').innerHTML =
+    '<div class="order-text" style="font-size:12px;">'+
+    (o.text||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')+
+    '</div>';
+  APP.viewBrOrdId = id;
+  openModal('modal-br-ord');
+}
+
+function copyBranchOrd() {
+  var id = APP.viewBrOrdId; if (!id) return;
+  var orders = lsGet('orders') || []; var o = null;
+  for (var i=0; i<orders.length; i++) { if(orders[i].id===id){ o=orders[i]; break; } }
+  if (!o) return;
+  navigator.clipboard.writeText(o.text||'').then(function(){ alert('คัดลอกแล้ว!'); });
+}
+
+// ─── DERIVED ACCUM ──────────────────────────────────────────────
+// Source of truth = orders[] (synced via Firebase).
+// Accum is computed on the fly from orders so it's always consistent
+// across devices (admin, branch, mobile, desktop).
+function computeMonthlyAccum(branchId) {
+  var mk = getMonthKey();
+  var orders = lsGet('orders') || [];
+  if (!Array.isArray(orders)) orders = [];
+  var bOrders = orders.filter(function(o){ return o.branchId === branchId; });
+  // Chronological order by id timestamp (id = 'o' + Date.now())
+  bOrders.sort(function(a,b){
+    var ta = parseInt(String(a.id||'o0').slice(1), 10) || 0;
+    var tb = parseInt(String(b.id||'o0').slice(1), 10) || 0;
+    return ta - tb;
+  });
+  var ba = { total: 0, discountAvailable: false };
+  for (var i = 0; i < bOrders.length; i++) {
+    var o = bOrders[i];
+    var ts = parseInt(String(o.id||'o0').slice(1), 10) || 0;
+    if (!ts) continue;
+    var od = new Date(ts);
+    var omk = od.getFullYear() + '-' + padZ(od.getMonth()+1);
+    if (omk !== mk) continue;
+    if (o.hasDiscount) { ba.discountAvailable = false; ba.total = o.total || 0; }
+    else { ba.total += (o.total || 0); }
+    if (ba.total >= DISC_THRESH && !ba.discountAvailable) { ba.discountAvailable = true; }
+  }
+  return ba;
+}
 function thMonthName(d) {
   var n=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
   return n[d.getMonth()]+' '+(d.getFullYear()+543);
@@ -1239,9 +1389,7 @@ function escHtml(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&
 
 function updateSummary() {
   var total = calcTotal();
-  var mk    = getMonthKey();
-  var acc   = lsGet('accum') || {};
-  var ba    = (acc[mk] && acc[mk][APP.branch.id]) || {discountAvailable:false};
+  var ba    = computeMonthlyAccum(APP.branch.id);
   var papG  = calcPaprikaG(total);
   var extra = getExtraPap();
   var papDisp = papG > 0 ? ((papG/1000+extra).toFixed(1)) : (extra > 0 ? extra.toFixed(1) : '—');
@@ -1295,8 +1443,7 @@ function checkDate() {
 }
 
 function loadAccumBar() {
-  var mk=getMonthKey(); var acc=lsGet('accum')||{};
-  var ba=(acc[mk]&&acc[mk][APP.branch.id])||{total:0,discountAvailable:false};
+  var ba=computeMonthlyAccum(APP.branch.id);
   var pct=Math.min(100,(ba.total/DISC_THRESH)*100);
   document.getElementById('accum-bar').style.width=pct+'%';
   document.getElementById('accum-txt').textContent=ba.total.toLocaleString()+' / '+DISC_THRESH.toLocaleString()+' ชิ้น';
@@ -1306,8 +1453,7 @@ function loadAccumBar() {
 }
 
 function checkDiscBadge() {
-  var mk=getMonthKey(); var acc=lsGet('accum')||{};
-  var ba=(acc[mk]&&acc[mk][APP.branch.id])||{discountAvailable:false};
+  var ba=computeMonthlyAccum(APP.branch.id);
   document.getElementById('o-disc-badge').style.display=ba.discountAvailable?'block':'none';
 }
 
@@ -1339,8 +1485,7 @@ function doPreview() {
   var cfg = lsGet('settings')||{};
   document.getElementById('tg-btn-wrap').style.display = (cfg.tgBotToken&&cfg.tgChatId) ? 'block' : 'none';
   document.getElementById('send-status').style.display = 'none';
-  var mk=getMonthKey(); var acc=lsGet('accum')||{};
-  var ba=(acc[mk]&&acc[mk][APP.branch.id])||{discountAvailable:false};
+  var ba=computeMonthlyAccum(APP.branch.id);
   document.getElementById('preview-disc-banner').style.display=ba.discountAvailable?'block':'none';
   goPage('page-preview');
 }
@@ -1350,8 +1495,7 @@ function buildOrderText() {
   var b=APP.branch; var dv=document.getElementById('del-date').value;
   var dStr=toThaiDate(new Date(dv)); var todayStr=toThaiDate(new Date());
   var lotNo=b.currentLot||1;
-  var mk=getMonthKey(); var acc=lsGet('accum')||{};
-  var ba=(acc[mk]&&acc[mk][b.id])||{discountAvailable:false};
+  var ba=computeMonthlyAccum(b.id);
   var hasDisc=ba.discountAvailable;
   var total=calcTotal(); var papG=calcPaprikaG(total); var extraPap=getExtraPap();
   var price=calcPrice(total, hasDisc);
@@ -1507,19 +1651,11 @@ function retryTelegramFromSuccess() {
 function doConfirmOrder() {
   var ord=APP.order; if (!ord) { alert('กรุณาตรวจสอบออเดอร์ก่อน'); return; }
   ord.id = 'o'+Date.now();
+  // Detect if THIS order causes the branch to cross threshold (for celebration popup)
+  var baBefore = computeMonthlyAccum(ord.branchId);
   var orders=lsGet('orders')||[]; orders.unshift(ord); lsSet('orders', orders);
-
-  var mk=getMonthKey(); var acc=lsGet('accum')||{};
-  if (!acc[mk]) acc[mk]={};
-  if (!acc[mk][ord.branchId]) acc[mk][ord.branchId]={total:0,discountAvailable:false};
-  var ba=acc[mk][ord.branchId];
-
-  if (ord.hasDiscount) { ba.discountAvailable=false; ba.total=ord.total; }
-  else { ba.total += ord.total; }
-
-  var newReach=false;
-  if (ba.total>=DISC_THRESH && !ba.discountAvailable) { ba.discountAvailable=true; newReach=true; }
-  lsSet('accum', acc);
+  var baAfter = computeMonthlyAccum(ord.branchId);
+  var newReach = (!baBefore.discountAvailable && baAfter.discountAvailable);
 
   var branches=lsGet('branches')||{};
   if (branches[ord.branchId]) {
@@ -2079,14 +2215,13 @@ function exportCSV() {
 // ACCUM ADMIN
 // ============================================================
 function loadAccumAdmin() {
-  var mk=getMonthKey(); var acc=lsGet('accum')||{}; var bs=lsGet('branches')||{};
-  var mAcc=acc[mk]||{};
+  var bs=lsGet('branches')||{};
   var html='<div class="alert alert-info text-sm mb-10">ยอดสะสมประจำเดือน <strong>'+thMonthName(new Date())+'</strong></div>';
   var keys=Object.keys(bs);
   if (!keys.length) { html+='<div class="alert alert-warning">ยังไม่มีสาขา</div>'; }
   else {
     for (var i=0; i<keys.length; i++) {
-      var id=keys[i]; var b=bs[id]; var ba=mAcc[id]||{total:0,discountAvailable:false};
+      var id=keys[i]; var b=bs[id]; var ba=computeMonthlyAccum(id);
       var pct=Math.min(100,(ba.total/DISC_THRESH)*100);
       html+='<div class="card">';
       html+='<div class="flex-between mb-8">';
