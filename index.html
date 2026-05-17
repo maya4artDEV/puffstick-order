@@ -263,6 +263,7 @@ textarea.form-input{resize:none;line-height:1.5}
   <div class="hdr">
     <button class="btn-back" onclick="confirmLogout()">←</button>
     <div style="flex:1;"><div class="hdr-title" id="o-branch-name">สาขา...</div><div class="hdr-sub" id="o-lot-info">กำลังโหลด...</div></div>
+    <button onclick="goBranchHistory()" title="ดูประวัติออเดอร์" style="background:rgba(255,255,255,.18);border:none;color:#fff;width:42px;height:42px;border-radius:10px;font-size:20px;cursor:pointer;margin-right:6px;display:flex;align-items:center;justify-content:center;">📋</button>
     <div id="o-disc-badge" style="display:none;"><span class="badge badge-gold">💰 ส่วนลด 10%</span></div>
   </div>
   <div class="scroll-body">
@@ -273,9 +274,9 @@ textarea.form-input{resize:none;line-height:1.5}
       </div>
       <div class="prog-wrap"><div class="prog-bar" id="accum-bar" style="width:0%"></div></div>
       <div class="text-sm text-gray mt-8" id="accum-note">สะสมครบ 4,500 ชิ้น รับส่วนลด 10% ลอตถัดไป</div>
-      <div class="mt-10" style="text-align:center;">
-        <a onclick="goBranchHistory()" style="font-size:13px;font-weight:600;color:var(--brown);cursor:pointer;text-decoration:underline;">📋 ดูประวัติออเดอร์ของฉัน →</a>
-      </div>
+      <button class="btn btn-outline mt-10" onclick="goBranchHistory()" style="width:100%;color:var(--brown);border-color:var(--brown);font-weight:700;padding:12px;font-size:14px;">
+        📋 ดูประวัติออเดอร์ของฉัน
+      </button>
     </div>
 
     <div class="card">
