@@ -6,6 +6,10 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="theme-color" content="#2C5871">
+<!-- ─── No-cache headers (prevent PWA / Add-to-Home-Screen from holding stale HTML) ─── -->
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>PuffStick Order</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -232,7 +236,7 @@ textarea.form-input{resize:none;line-height:1.5}
       <button class="land-cta land-cta-ghost" onclick="goPage('page-admin-login')">🔐 แอดมิน — จัดการระบบ</button>
     </div>
 
-    <div class="land-footer">PUFFSTICK ORDER SYSTEM · v3.1</div>
+    <div class="land-footer" id="land-footer" onclick="forceReload()" style="cursor:pointer;" title="แตะเพื่ออัปเดตเวอร์ชันใหม่">PUFFSTICK ORDER SYSTEM</div>
   </div>
 </div>
 
@@ -488,6 +492,7 @@ textarea.form-input{resize:none;line-height:1.5}
     <div class="menu-row" onclick="openAdminTab('history')"><div class="menu-row-text"><div class="title">📋 ประวัติออเดอร์</div><div class="sub">ดูออเดอร์, อัปเดตสถานะ, export CSV</div></div><span class="chevron">›</span></div>
     <div class="menu-row" onclick="openAdminTab('accum')"><div class="menu-row-text"><div class="title">🎯 ยอดสะสม &amp; ส่วนลด</div><div class="sub">ติดตามยอดสะสมแต่ละสาขา</div></div><span class="chevron">›</span></div>
     <div class="menu-row" onclick="openAdminTab('settings')"><div class="menu-row-text"><div class="title">⚙️ ตั้งค่าระบบ</div><div class="sub">LINE, Telegram, Firebase, รหัสผ่าน</div></div><span class="chevron">›</span></div>
+    <div class="menu-row" onclick="forceReload()" style="border-top:2px solid var(--border);margin-top:6px;"><div class="menu-row-text"><div class="title">🔄 อัปเดตเวอร์ชันใหม่</div><div class="sub" id="adm-version-info">เวอร์ชันปัจจุบัน · กดเพื่อโหลดของใหม่จาก server</div></div><span class="chevron">›</span></div>
   </div>
 </div>
 
@@ -720,6 +725,9 @@ var FILLINGS = [
   {id:'choc',   name:'ช็อกโกแลต',      emoji:'🍫'}
 ];
 
+var APP_VERSION = '3.2.0';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
+var APP_BUILD   = '2026.05.17';  // วันที่ deploy
+
 var PRICE_PER_PC = 20;
 var DISC_THRESH  = 4500;
 var DISC_RATE    = 0.10;
@@ -793,6 +801,11 @@ function lsSet(k,v) { try { localStorage.setItem('ps_'+k, JSON.stringify(v)); } 
 // INIT
 // ============================================================
 function initApp() {
+  // Show version everywhere
+  var ftEl = document.getElementById('land-footer');
+  if (ftEl) ftEl.textContent = 'PUFFSTICK ORDER SYSTEM · v' + APP_VERSION + ' · ' + APP_BUILD;
+  console.log('[PuffStick] App version', APP_VERSION, 'build', APP_BUILD);
+
   var bs = lsGet('branches');
 
   if (!bs || Object.keys(bs).length === 0) {
@@ -1065,6 +1078,27 @@ function goPage(id) {
 function padZ(n) { return n < 10 ? '0'+n : ''+n; }
 function toThaiDate(d) { return padZ(d.getDate())+'/'+padZ(d.getMonth()+1)+'/'+((d.getFullYear()+543)%100); }
 function getMonthKey() { var d=new Date(); return d.getFullYear()+'-'+padZ(d.getMonth()+1); }
+
+// ─── FORCE UPDATE (clear cache + reload) ────────────────────────
+// Solves PWA / Add-to-Home-Screen showing stale HTML on mobile.
+function forceReload() {
+  if (!confirm('🔄 อัปเดตเวอร์ชันใหม่?\n\nระบบจะล้าง cache และโหลดใหม่จาก server\nออเดอร์/ข้อมูลของคุณไม่หาย')) return;
+
+  // Try to clear service worker caches (just in case)
+  if (window.caches && caches.keys) {
+    caches.keys().then(function(names){
+      names.forEach(function(n){ caches.delete(n); });
+    }).catch(function(){});
+  }
+
+  // Bust HTTP cache by adding timestamp to URL
+  var u = new URL(window.location.href);
+  u.searchParams.set('_v', Date.now().toString());
+  // Force navigation (true = reload from server, not cache; legacy but still works)
+  setTimeout(function(){
+    window.location.replace(u.toString());
+  }, 200);
+}
 
 // ─── BRANCH'S OWN HISTORY ───────────────────────────────────────
 function goBranchHistory() {
@@ -1803,6 +1837,10 @@ function doLoginAdmin() {
 function doLogoutAdmin() { APP.adminIn=false; goPage('page-landing'); }
 
 function loadAdminDash() {
+  // Show version in admin
+  var vEl = document.getElementById('adm-version-info');
+  if (vEl) vEl.textContent = 'v' + APP_VERSION + ' · ' + APP_BUILD + ' · แตะเพื่อโหลดของใหม่จาก server';
+
   var orders=lsGet('orders')||{}; if (!Array.isArray(orders)) orders=[];
   var now=new Date();
   document.getElementById('adm-month-label').textContent=thMonthName(now);
