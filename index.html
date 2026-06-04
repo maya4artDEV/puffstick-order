@@ -697,17 +697,35 @@ textarea.form-input{resize:none;line-height:1.5}
 
 <!-- MODAL: BRANCH -->
 <div class="modal-bg" id="modal-branch">
-  <div class="modal-box">
+  <div class="modal-box" style="max-height:88vh;overflow-y:auto;">
     <div class="modal-title" id="mbr-title">เพิ่มสาขาใหม่</div>
     <input type="hidden" id="mbr-id">
-    <div class="form-group"><label class="form-label">ชื่อสาขา</label><input type="text" class="form-input" id="mbr-name" placeholder="ชื่อสาขา"></div>
-    <div class="form-group"><label class="form-label">PIN (4 ตัวเลข)</label><input type="number" class="form-input" id="mbr-pin" inputmode="numeric" placeholder="1234"></div>
-    <div class="form-group"><label class="form-label">เลข Lot ปัจจุบัน</label><input type="number" class="form-input" id="mbr-lot" value="1" min="1"></div>
-    <div class="form-group">
-      <label class="form-label">📍 จุดขาย <span style="font-weight:400;text-transform:none;font-size:11px;color:var(--gray);">(เพิ่มได้ถ้ามีหลายจุด)</span></label>
+
+    <div class="card" style="padding:10px 12px;margin-bottom:10px;background:var(--cream);">
+      <div style="font-size:12px;font-weight:700;color:var(--brown-dark);margin-bottom:8px;">🏪 ข้อมูลพื้นฐาน</div>
+      <div class="form-group"><label class="form-label">ชื่อสาขา</label><input type="text" class="form-input" id="mbr-name" placeholder="เช่น นครนายก"></div>
+      <div class="form-group"><label class="form-label">PIN (4 ตัวเลข)</label><input type="number" class="form-input" id="mbr-pin" inputmode="numeric" placeholder="1234"></div>
+      <div class="form-group"><label class="form-label">เลข Lot ปัจจุบัน</label><input type="number" class="form-input" id="mbr-lot" value="1" min="1"></div>
+    </div>
+
+    <div class="card" style="padding:10px 12px;margin-bottom:10px;">
+      <div style="font-size:12px;font-weight:700;color:var(--brown-dark);margin-bottom:8px;">📋 ข้อมูลลูกค้า (สำหรับใบส่งของ)</div>
+      <div class="alert alert-info text-xs mb-10" style="font-size:11px;">ข้อมูลนี้แสดงในใบส่งของ/ใบกำกับ ถ้าเว้นว่างจะใช้ "ชื่อสาขา" แทน</div>
+      <div class="form-group"><label class="form-label">รหัสลูกค้า (AR)</label><input type="text" class="form-input" id="mbr-arcode" placeholder="เช่น AR00227"></div>
+      <div class="form-group"><label class="form-label">ชื่อ-นามสกุล / ชื่อกิจการ</label><input type="text" class="form-input" id="mbr-custname" placeholder="เช่น นาง รัตน์ติกร จงเจริญ (สาขา-คลอง5)"></div>
+      <div class="form-group"><label class="form-label">ที่อยู่ (บรรทัด 1)</label><input type="text" class="form-input" id="mbr-addr1" placeholder="เช่น 100/106"></div>
+      <div class="form-group"><label class="form-label">ที่อยู่ (บรรทัด 2)</label><input type="text" class="form-input" id="mbr-addr2" placeholder="เช่น หมู่ 1 ต.บึงยี่โถ อ.ธัญบุรี"></div>
+      <div class="form-group"><label class="form-label">ที่อยู่ (บรรทัด 3)</label><input type="text" class="form-input" id="mbr-addr3" placeholder="เช่น จ.ปทุมธานี 12130"></div>
+      <div class="form-group"><label class="form-label">เลขประจำตัวผู้เสียภาษี</label><input type="text" class="form-input" id="mbr-taxid" placeholder="เช่น 3601200347314"></div>
+      <div class="form-group"><label class="form-label">เบอร์โทร</label><input type="text" class="form-input" id="mbr-phone" placeholder="เช่น 089-xxx-xxxx"></div>
+    </div>
+
+    <div class="card" style="padding:10px 12px;margin-bottom:10px;">
+      <div style="font-size:12px;font-weight:700;color:var(--brown-dark);margin-bottom:8px;">📍 จุดขาย <span style="font-weight:400;font-size:11px;color:var(--gray);">(เพิ่มได้ถ้ามีหลายจุด)</span></div>
       <div id="mbr-locs-list"></div>
       <button class="btn btn-ghost btn-sm mt-8" onclick="addModalLoc()" style="width:100%;">＋ เพิ่มจุด</button>
     </div>
+
     <div class="grid-2 mt-12">
       <button class="btn btn-ghost" onclick="closeModal('modal-branch')">ยกเลิก</button>
       <button class="btn btn-primary" onclick="saveBranch()">บันทึก</button>
@@ -815,8 +833,8 @@ var FILLINGS = [
   {id:'choc',   name:'ช็อกโกแลต',      emoji:'🍫'}
 ];
 
-var APP_VERSION = '3.3.0';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
-var APP_BUILD   = '2026.06.04';  // วันที่ deploy
+var APP_VERSION = '3.3.1';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
+var APP_BUILD   = '2026.06.05';  // วันที่ deploy
 
 var PRICE_PER_PC = 20;
 var DISC_THRESH  = 4500;
@@ -1242,8 +1260,25 @@ function renderInvoiceTemplate(ord) {
 
   html += '<div class="inv-cust-row">';
   html += '  <div class="inv-cust-left">';
-  html += '    <div><span class="lbl">ลูกค้า:</span><span class="val">'+escHtml(ord.branchName||'')+'</span></div>';
-  html += '    <div><span class="lbl">รหัสลูกค้า:</span><span class="val">'+escHtml(ord.branchId||'')+'</span></div>';
+  // Lookup branch for customer details (fallback to order's branchName)
+  var allBranches = lsGet('branches') || {};
+  var br = (ord.branchId && allBranches[ord.branchId]) ? allBranches[ord.branchId] : null;
+  var custName = (br && br.customerName) ? br.customerName : (ord.branchName || '');
+  var arCode   = (br && br.arCode) ? br.arCode : (ord.branchId || '');
+  var addrLines = [];
+  if (br) {
+    if (br.addr1) addrLines.push(br.addr1);
+    if (br.addr2) addrLines.push(br.addr2);
+    if (br.addr3) addrLines.push(br.addr3);
+  }
+  var addrHtml = addrLines.length
+    ? '<div style="margin-left:80px;font-size:11.5px;color:#333;line-height:1.4;">'+addrLines.map(function(a){return escHtml(a);}).join('<br>')+'</div>'
+    : '';
+  html += '    <div><span class="lbl">รหัสลูกค้า:</span><span class="val">'+escHtml(arCode)+'</span></div>';
+  html += '    <div><span class="lbl">ลูกค้า:</span><span class="val">'+escHtml(custName)+'</span></div>';
+  html += addrHtml;
+  if (br && br.taxId)  html += '    <div><span class="lbl">เลขผู้เสียภาษี:</span><span class="val">'+escHtml(br.taxId)+'</span></div>';
+  if (br && br.phone)  html += '    <div><span class="lbl">โทร:</span><span class="val">'+escHtml(br.phone)+'</span></div>';
   html += '    <div><span class="lbl">อ้างอิง:</span><span class="val">Lot. NO.'+lotNo+'</span></div>';
   html += '  </div>';
   html += '  <div class="inv-cust-right">';
@@ -2421,6 +2456,14 @@ function showAddBranch() {
   document.getElementById('mbr-title').textContent='เพิ่มสาขาใหม่';
   document.getElementById('mbr-id').value=''; document.getElementById('mbr-name').value='';
   document.getElementById('mbr-pin').value=''; document.getElementById('mbr-lot').value='1';
+  // Customer fields
+  document.getElementById('mbr-arcode').value='';
+  document.getElementById('mbr-custname').value='';
+  document.getElementById('mbr-addr1').value='';
+  document.getElementById('mbr-addr2').value='';
+  document.getElementById('mbr-addr3').value='';
+  document.getElementById('mbr-taxid').value='';
+  document.getElementById('mbr-phone').value='';
   renderModalLocs([]);
   openModal('modal-branch');
 }
@@ -2429,6 +2472,14 @@ function editBranch(id) {
   document.getElementById('mbr-title').textContent='แก้ไขสาขา';
   document.getElementById('mbr-id').value=id; document.getElementById('mbr-name').value=b.name;
   document.getElementById('mbr-pin').value=b.pin; document.getElementById('mbr-lot').value=b.currentLot||1;
+  // Populate customer fields (fallback to empty if missing)
+  document.getElementById('mbr-arcode').value=b.arCode||'';
+  document.getElementById('mbr-custname').value=b.customerName||'';
+  document.getElementById('mbr-addr1').value=b.addr1||'';
+  document.getElementById('mbr-addr2').value=b.addr2||'';
+  document.getElementById('mbr-addr3').value=b.addr3||'';
+  document.getElementById('mbr-taxid').value=b.taxId||'';
+  document.getElementById('mbr-phone').value=b.phone||'';
   renderModalLocs(b.locations||[]);
   openModal('modal-branch');
 }
@@ -2466,7 +2517,22 @@ function saveBranch() {
   var keys=Object.keys(bs);
   for (var k=0; k<keys.length; k++) { if (bs[keys[k]].pin===pin && keys[k]!==editId) { alert('PIN นี้ถูกใช้แล้ว'); return; } }
   var id=editId||('b'+Date.now());
-  bs[id]={name:name,pin:pin,currentLot:lot,locations:locs};
+  // Preserve existing branch object's other fields if editing (don't drop unknown keys)
+  var existing = bs[id] || {};
+  bs[id] = {
+    name: name,
+    pin: pin,
+    currentLot: lot,
+    locations: locs,
+    // Customer details for invoice
+    arCode:       document.getElementById('mbr-arcode').value.trim(),
+    customerName: document.getElementById('mbr-custname').value.trim(),
+    addr1:        document.getElementById('mbr-addr1').value.trim(),
+    addr2:        document.getElementById('mbr-addr2').value.trim(),
+    addr3:        document.getElementById('mbr-addr3').value.trim(),
+    taxId:        document.getElementById('mbr-taxid').value.trim(),
+    phone:        document.getElementById('mbr-phone').value.trim()
+  };
   saveBranches(bs); closeModal('modal-branch'); loadBranches();
 }
 function delBranch(id) {
