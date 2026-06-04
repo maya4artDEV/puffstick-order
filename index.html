@@ -14,6 +14,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700;800;900&family=Poppins:wght@400;600;700;800&display=swap" rel="stylesheet">
+<!-- html2canvas — HTML→PNG for invoice generation -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <style>
 :root {
   /* Editorial blue palette */
@@ -191,6 +193,51 @@ textarea.form-input{resize:none;line-height:1.5}
 .mloc-inp:focus{outline:none;border-color:var(--brown);}
 .mloc-del{background:none;border:none;color:var(--gray-light);font-size:18px;cursor:pointer;padding:2px 6px;}
 .mloc-del:active{color:var(--red);}
+/* ─── INVOICE TEMPLATE ─── */
+.inv-wrap{position:absolute;left:-9999px;top:0;width:780px;background:#fff;padding:32px 36px;font-family:'Noto Sans Thai','Sarabun',sans-serif;color:#1a1a1a;font-size:12px;line-height:1.4;}
+.inv-wrap.visible{position:relative;left:0;}
+.inv-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1.5px solid #333;padding-bottom:10px;margin-bottom:14px;}
+.inv-head-left{flex:1;}
+.inv-co-name{font-size:18px;font-weight:800;color:#1a1a1a;margin-bottom:4px;}
+.inv-co-addr{font-size:11px;color:#444;line-height:1.5;}
+.inv-head-right{text-align:right;}
+.inv-doc-type{font-size:17px;font-weight:800;color:#1a1a1a;letter-spacing:.5px;margin-bottom:6px;}
+.inv-doc-no{font-size:11px;}
+.inv-cust-row{display:flex;justify-content:space-between;gap:24px;margin-bottom:12px;font-size:12px;}
+.inv-cust-left{flex:1;}
+.inv-cust-right{min-width:240px;}
+.inv-cust-row .lbl{color:#666;font-weight:500;display:inline-block;min-width:80px;}
+.inv-cust-row .val{font-weight:700;color:#1a1a1a;}
+.inv-tbl{width:100%;border-collapse:collapse;margin-bottom:10px;}
+.inv-tbl th{background:#f4f4f4;border:1px solid #333;padding:6px 8px;font-size:11px;font-weight:700;text-align:center;}
+.inv-tbl td{border:1px solid #999;padding:5px 8px;font-size:11.5px;vertical-align:top;}
+.inv-tbl td.c{text-align:center;}
+.inv-tbl td.r{text-align:right;}
+.inv-tbl td.l{text-align:left;}
+.inv-totals{display:flex;justify-content:space-between;gap:16px;margin-top:10px;}
+.inv-totals-left{flex:1;font-size:11px;}
+.inv-totals-right{min-width:300px;}
+.inv-totals-right table{width:100%;border-collapse:collapse;}
+.inv-totals-right td{padding:4px 8px;font-size:11.5px;border-bottom:1px dotted #ccc;}
+.inv-totals-right td.lbl{color:#444;}
+.inv-totals-right td.val{text-align:right;font-weight:700;color:#1a1a1a;}
+.inv-totals-right tr.grand td{border-top:1.5px solid #333;border-bottom:1.5px double #333;padding-top:6px;font-size:13px;color:#c00;}
+.inv-totals-right tr.grand td.val{font-weight:800;}
+.inv-pay{display:flex;justify-content:space-between;gap:20px;margin-top:14px;padding-top:12px;border-top:1px solid #ccc;}
+.inv-pay-left{flex:1;font-size:11.5px;}
+.inv-pay-left strong{color:#1a1a1a;}
+.inv-qr{width:140px;height:140px;background:#f0f0f0;border:1px solid #ddd;display:flex;align-items:center;justify-content:center;font-size:11px;color:#999;text-align:center;}
+.inv-qr img{width:100%;height:100%;object-fit:contain;display:block;}
+.inv-qr-caption{font-size:10.5px;text-align:center;margin-top:4px;color:#444;font-weight:600;}
+.inv-footer{margin-top:16px;padding-top:8px;border-top:1px dotted #999;font-size:10px;color:#666;display:flex;justify-content:space-between;align-items:flex-end;}
+.inv-footer-sig{display:flex;gap:36px;margin-top:6px;}
+.inv-sig-block{font-size:10.5px;text-align:center;}
+.inv-sig-line{display:inline-block;width:140px;border-bottom:1px solid #333;margin-bottom:2px;height:24px;}
+
+/* Settings: company info + QR */
+.qr-preview{width:160px;height:160px;border:2px dashed var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;background:#fafafa;overflow:hidden;}
+.qr-preview img{max-width:100%;max-height:100%;object-fit:contain;}
+
 </style>
 </head>
 <body>
@@ -283,14 +330,18 @@ textarea.form-input{resize:none;line-height:1.5}
       </button>
     </div>
 
-    <div class="card">
-      <div class="card-title">📅 วันที่ต้องการรับขนม</div>
-      <div class="alert alert-info text-sm mb-10" style="margin-top:-2px;">
-        ⏰ ค่าเริ่มต้น: <strong>พรุ่งนี้</strong> — แตะวันที่ด้านล่างเพื่อเปลี่ยนได้
+    <div class="card" style="border:2px solid var(--gold);background:linear-gradient(135deg,#FFF9E6,#FFFAEF);">
+      <div class="card-title" style="color:var(--brown-dark);">📅 วันที่ต้องการรับขนม</div>
+      <div style="background:#FEF3C7;border-left:4px solid var(--gold);padding:10px 12px;border-radius:6px;margin-bottom:10px;">
+        <div style="font-size:14px;font-weight:700;color:var(--brown-dark);margin-bottom:4px;">⚠️ โปรดอ่านก่อนสั่ง</div>
+        <div style="font-size:13px;line-height:1.5;color:var(--gray-dark);">
+          ระบบตั้ง <strong style="color:var(--brown);">จัดส่งวันถัดไป</strong> ให้อัตโนมัติ<br>
+          หากต้องการ <strong>เปลี่ยนวันส่ง</strong> → แตะวันที่ด้านล่างเพื่อเลือกใหม่
+        </div>
       </div>
       <input type="date" class="form-input" id="del-date" onchange="checkDate()"
-             style="font-size:16px;padding:14px 12px;min-height:48px;font-weight:600;color:var(--brown-dark);text-align:center;cursor:pointer;">
-      <div id="del-date-thai" class="text-sm" style="text-align:center;margin-top:6px;color:var(--gray);font-weight:500;"></div>
+             style="font-size:17px;padding:16px 12px;min-height:54px;font-weight:700;color:var(--brown-dark);text-align:center;cursor:pointer;border:2px solid var(--gold);background:#fff;">
+      <div id="del-date-thai" class="text-sm" style="text-align:center;margin-top:8px;color:var(--brown);font-weight:600;font-size:14px;"></div>
       <div id="date-warn" class="alert alert-warning mt-8" style="display:none;">⚠️ ควรสั่งล่วงหน้าอย่างน้อย 1 วัน</div>
       <div id="date-ok" class="alert alert-success mt-8" style="display:none;">✅ สั่งล่วงหน้า <strong id="days-num"></strong> วัน</div>
     </div>
@@ -454,12 +505,24 @@ textarea.form-input{resize:none;line-height:1.5}
     <div style="font-size:22px;font-weight:800;color:var(--brown);margin-bottom:8px;">บันทึกออเดอร์สำเร็จ!</div>
     <div style="font-size:15px;color:var(--gray);margin-bottom:6px;" id="suc-lot"></div>
     <div style="font-size:13px;color:var(--gray);margin-bottom:16px;" id="suc-detail"></div>
+
+    <!-- Confirmation banner — addresses "did Tony get my order?" anxiety -->
+    <div style="background:linear-gradient(135deg,#E8F5E9,#C8E6C9);border:2px solid #4CAF50;border-radius:12px;padding:14px 16px;margin-bottom:16px;width:100%;max-width:340px;">
+      <div style="font-size:15px;font-weight:700;color:#2E7D32;margin-bottom:6px;">✅ ผู้ประสานงานได้รับออเดอร์แล้ว</div>
+      <div style="font-size:12.5px;color:#555;line-height:1.5;">ระบบส่งใบส่งของไปทาง Telegram ของผู้ประสานงานเรียบร้อย<br>คุณสามารถดาวน์โหลดสำเนาด้านล่าง</div>
+    </div>
+
     <div id="suc-tg-status" class="alert" style="display:none;width:100%;max-width:340px;margin-bottom:14px;text-align:left;"></div>
     <div id="suc-disc" class="disc-banner" style="display:none;width:100%;margin-bottom:20px;max-width:320px;">🌟 ยอดสะสมผ่าน 4,500 ชิ้นแล้ว!<br>ลอตถัดไปได้ส่วนลด 10%</div>
-    <button class="btn btn-primary" style="max-width:280px;" onclick="doNewOrder()">🛒 สั่งออเดอร์ใหม่</button>
+
+    <button class="btn btn-primary" style="max-width:280px;" onclick="downloadInvoice()">📄 ดาวน์โหลดใบส่งของ</button>
+    <button class="btn btn-outline mt-10" style="max-width:280px;" onclick="doNewOrder()">🛒 สั่งออเดอร์ใหม่</button>
     <button class="btn btn-ghost mt-10" style="max-width:280px;" onclick="confirmLogout()">ออกจากระบบ</button>
   </div>
 </div>
+
+<!-- INVOICE TEMPLATE (hidden, rendered by html2canvas) -->
+<div id="invoice-template" class="inv-wrap" aria-hidden="true"></div>
 
 <!-- ADMIN LOGIN -->
 <div id="page-admin-login" class="page">
@@ -561,6 +624,33 @@ textarea.form-input{resize:none;line-height:1.5}
         <input type="file" id="cfg-logo-file" accept="image/png,image/svg+xml,image/*" onchange="onLogoFile(this)" style="font-size:12px;width:100%;">
         <div class="alert alert-warning text-xs" style="margin-top:8px;">แนะนำใช้ PNG พื้นหลังโปร่งใส (transparent) สีขาว</div>
         <button class="btn btn-ghost btn-sm" onclick="resetLogo()" style="margin-top:8px;">รีเซ็ตเป็นโลโก้เริ่มต้น</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">🏢 ข้อมูลบริษัท (สำหรับใบส่งของ)</div>
+      <div class="alert alert-info text-sm mb-10">ข้อมูลบริษัทและบัญชี — จะแสดงในใบส่งของ/ใบแจ้งหนี้ของทุกออเดอร์</div>
+      <div class="form-group"><label class="form-label">ชื่อบริษัท</label><input type="text" class="form-input" id="cfg-co-name" placeholder="บจก. 92 คำอิ่ม (สำนักงานใหญ่)"></div>
+      <div class="form-group"><label class="form-label">ที่อยู่ (บรรทัดที่ 1)</label><input type="text" class="form-input" id="cfg-co-addr1" placeholder="200,202 ถนนพหลโยธิน ตำบลปากเพรียว"></div>
+      <div class="form-group"><label class="form-label">ที่อยู่ (บรรทัดที่ 2)</label><input type="text" class="form-input" id="cfg-co-addr2" placeholder="อำเภอเมืองสระบุรี จังหวัดสระบุรี 18000"></div>
+      <div class="form-group"><label class="form-label">โทรศัพท์</label><input type="text" class="form-input" id="cfg-co-phone" placeholder="036-211654"></div>
+      <div class="form-group"><label class="form-label">Email</label><input type="text" class="form-input" id="cfg-co-email" placeholder="92foodlimited@gmail.com"></div>
+      <div class="form-group"><label class="form-label">เลขประจำตัวผู้เสียภาษี</label><input type="text" class="form-input" id="cfg-co-taxid" placeholder="0195559000263"></div>
+      <div class="form-group"><label class="form-label">ชื่อบัญชีธนาคาร</label><input type="text" class="form-input" id="cfg-bank-name" placeholder="บริษัท 92 คำอิ่ม จำกัด"></div>
+      <div class="form-group"><label class="form-label">ธนาคาร + เลขบัญชี</label><input type="text" class="form-input" id="cfg-bank-acc" placeholder="ธ.กสิกรไทย 070-3-54283-2"></div>
+      <button class="btn btn-primary mb-8" onclick="saveCompanyInfo()">บันทึกข้อมูลบริษัท</button>
+    </div>
+
+    <div class="card">
+      <div class="card-title">📱 QR Code รับชำระเงิน</div>
+      <div class="alert alert-info text-sm mb-10">อัปโหลด QR Code (PromptPay / บัญชีธนาคาร) — จะแสดงในใบส่งของทุกใบ<br>QR <strong>ไม่ต้องระบุยอด</strong> ลูกค้าสแกนแล้วโอนเองได้</div>
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;">
+        <div class="qr-preview" id="cfg-qr-preview"><span class="text-xs text-gray">ยังไม่มี QR</span></div>
+        <div style="flex:1;min-width:200px;">
+          <input type="file" id="cfg-qr-file" accept="image/*" onchange="onQrFile(this)" style="font-size:12px;width:100%;margin-bottom:8px;">
+          <div class="text-xs text-gray mb-8">รองรับ PNG / JPG · ระบบบีบอัดอัตโนมัติ</div>
+          <button class="btn btn-ghost btn-sm" onclick="resetQr()">ลบ QR</button>
+        </div>
       </div>
     </div>
 
@@ -725,8 +815,8 @@ var FILLINGS = [
   {id:'choc',   name:'ช็อกโกแลต',      emoji:'🍫'}
 ];
 
-var APP_VERSION = '3.2.0';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
-var APP_BUILD   = '2026.05.17';  // วันที่ deploy
+var APP_VERSION = '3.3.0';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
+var APP_BUILD   = '2026.06.04';  // วันที่ deploy
 
 var PRICE_PER_PC = 20;
 var DISC_THRESH  = 4500;
@@ -853,6 +943,7 @@ function initApp() {
   pullConfigFromFirebase();   // admin password, Telegram
   pullBranchesFromFirebase(); // branches / PIN
   pullOrdersFromFirebase();   // order history
+  pullMediaFromFirebase();    // QR code (for invoices)
   // Version sync — notify other devices about latest version
   pushVersionToFirebase();
   // Check if there's a newer version somewhere → show banner
@@ -952,6 +1043,367 @@ function resetLogo() {
   var m = lsGet('media') || {}; delete m.logoImage; lsSet('media', m);
   alert('รีเซ็ตแล้ว — โหลดหน้าใหม่จะเห็นโลโก้เริ่มต้น');
   loadMediaSettingsUI();
+}
+
+// ─── QR CODE (payment) ──────────────────────────────────────────
+function onQrFile(input) {
+  var file = input.files && input.files[0]; if (!file) return;
+  if (file.type.indexOf('image/') !== 0) { alert('กรุณาเลือกไฟล์รูปภาพ'); return; }
+  _imageToCompressedBase64(file, 600, 600, 'image/png', 0.92, function(err, dataUrl) {
+    if (err) { alert('❌ '+err.message); return; }
+    var media = lsGet('media') || {};
+    media.payQr = dataUrl;
+    lsSet('media', media);
+    pushMediaToFirebase();
+    loadQrPreview();
+    alert('✅ บันทึก QR Code แล้ว');
+    input.value = '';
+  });
+}
+
+function resetQr() {
+  if (!confirm('ลบ QR Code?')) return;
+  var m = lsGet('media') || {}; delete m.payQr; lsSet('media', m);
+  pushMediaToFirebase();
+  loadQrPreview();
+}
+
+function loadQrPreview() {
+  var prev = document.getElementById('cfg-qr-preview'); if (!prev) return;
+  var media = lsGet('media') || {};
+  if (media.payQr) {
+    prev.innerHTML = '<img src="'+media.payQr+'" alt="QR">';
+  } else {
+    prev.innerHTML = '<span class="text-xs text-gray">ยังไม่มี QR</span>';
+  }
+}
+
+// ─── COMPANY INFO ───────────────────────────────────────────────
+function saveCompanyInfo() {
+  var co = {
+    name:   document.getElementById('cfg-co-name').value.trim(),
+    addr1:  document.getElementById('cfg-co-addr1').value.trim(),
+    addr2:  document.getElementById('cfg-co-addr2').value.trim(),
+    phone:  document.getElementById('cfg-co-phone').value.trim(),
+    email:  document.getElementById('cfg-co-email').value.trim(),
+    taxid:  document.getElementById('cfg-co-taxid').value.trim(),
+    bankName: document.getElementById('cfg-bank-name').value.trim(),
+    bankAcc:  document.getElementById('cfg-bank-acc').value.trim()
+  };
+  var cfg = lsGet('settings') || {};
+  cfg.company = co;
+  lsSet('settings', cfg);
+  pushConfigToFirebase();
+  alert('✅ บันทึกข้อมูลบริษัทแล้ว');
+}
+
+function getCompanyInfo() {
+  var cfg = lsGet('settings') || {};
+  return cfg.company || {
+    name: 'บจก. 92 คำอิ่ม (สำนักงานใหญ่)',
+    addr1: '200,202 ถนนพหลโยธิน ตำบลปากเพรียว',
+    addr2: 'อำเภอเมืองสระบุรี จังหวัดสระบุรี 18000',
+    phone: '036-211654',
+    email: '92foodlimited@gmail.com',
+    taxid: '0195559000263',
+    bankName: 'บริษัท 92 คำอิ่ม จำกัด',
+    bankAcc: 'ธ.กสิกรไทย 070-3-54283-2'
+  };
+}
+
+function loadCompanyInfoUI() {
+  var co = getCompanyInfo();
+  var fields = ['name','addr1','addr2','phone','email','taxid','bankName','bankAcc'];
+  var ids = ['cfg-co-name','cfg-co-addr1','cfg-co-addr2','cfg-co-phone','cfg-co-email','cfg-co-taxid','cfg-bank-name','cfg-bank-acc'];
+  for (var i=0; i<fields.length; i++) {
+    var el = document.getElementById(ids[i]);
+    if (el) el.value = co[fields[i]] || '';
+  }
+}
+
+// ─── PUSH MEDIA TO FIREBASE (so QR syncs across devices) ───────
+function pushMediaToFirebase() {
+  var ep = fbEndpoint('media'); if (!ep) return;
+  var media = lsGet('media') || {};
+  var ts = Date.now();
+  fetch(ep, {
+    method:'PUT',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ _ts: ts, payQr: media.payQr || null })
+  }).catch(function(){});
+}
+
+function pullMediaFromFirebase() {
+  var ep = fbEndpoint('media'); if (!ep) return;
+  fetch(ep).then(function(r){ return r.ok ? r.json() : null; }).then(function(data){
+    if (!data || !data._ts) return;
+    var media = lsGet('media') || {};
+    var localTs = media._mediaTs || 0;
+    if (data._ts <= localTs) return;
+    if (data.payQr) media.payQr = data.payQr;
+    media._mediaTs = data._ts;
+    lsSet('media', media);
+  }).catch(function(){});
+}
+
+// ─── INVOICE GENERATION ─────────────────────────────────────────
+function generateInvoiceNo(ord) {
+  // Format: IV{YY}{MM}{DD}-{4-digit seq from timestamp}
+  var ts = parseInt(String(ord.id||'o0').slice(1), 10) || Date.now();
+  var d = new Date(ts);
+  var yy = (d.getFullYear()+543) % 100;
+  var mm = padZ(d.getMonth()+1);
+  var dd = padZ(d.getDate());
+  var seq = String(ts).slice(-4);
+  return 'IV' + yy + mm + dd + '-' + seq;
+}
+
+function renderInvoiceTemplate(ord) {
+  var co = getCompanyInfo();
+  var media = lsGet('media') || {};
+  var invNo = generateInvoiceNo(ord);
+  var orderDate = ord.orderDate || toThaiDate(new Date());
+  var deliveryDate = ord.deliveryDate || '';
+  var lotNo = ord.lotNo || '';
+
+  // Build items table from order.items (sum across locations)
+  var items = aggregateOrderItems(ord);
+  var rowsHtml = '';
+  var rowNum = 1;
+  // Filling items
+  for (var i=0; i<items.fillings.length; i++) {
+    var f = items.fillings[i];
+    var lineTotal = f.qty * (ord.pricePerPiece || PRICE_PER_PC);
+    rowsHtml += '<tr>';
+    rowsHtml += '<td class="c">'+rowNum+'</td>';
+    rowsHtml += '<td class="l">Puff Stick - '+escHtml(f.name)+'</td>';
+    rowsHtml += '<td class="c">'+f.qty.toLocaleString()+' ชิ้น</td>';
+    rowsHtml += '<td class="r">'+(ord.pricePerPiece||PRICE_PER_PC).toFixed(2)+'</td>';
+    rowsHtml += '<td class="r">'+lineTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>';
+    rowsHtml += '</tr>';
+    rowNum++;
+  }
+  // Paprika (no price line — extra is quoted separately)
+  if (items.papG > 0 || items.papExtraKg > 0) {
+    var totalPapKg = (items.papG/1000) + (items.papExtraKg||0);
+    rowsHtml += '<tr>';
+    rowsHtml += '<td class="c">'+rowNum+'</td>';
+    rowsHtml += '<td class="l">ผงปาปริก้า</td>';
+    rowsHtml += '<td class="c">'+totalPapKg.toFixed(1)+' กิโลกรัม</td>';
+    rowsHtml += '<td class="r">—</td>';
+    rowsHtml += '<td class="r">—</td>';
+    rowsHtml += '</tr>';
+    rowNum++;
+  }
+  // Small box
+  if (ord.boxSmall > 0) {
+    var smallTotal = ord.boxSmall * BOX_SMALL_PRICE;
+    rowsHtml += '<tr>';
+    rowsHtml += '<td class="c">'+rowNum+'</td>';
+    rowsHtml += '<td class="l">กล่องเล็ก</td>';
+    rowsHtml += '<td class="c">'+ord.boxSmall.toLocaleString()+' ใบ</td>';
+    rowsHtml += '<td class="r">'+BOX_SMALL_PRICE.toFixed(2)+'</td>';
+    rowsHtml += '<td class="r">'+smallTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>';
+    rowsHtml += '</tr>';
+    rowNum++;
+  }
+  // Large box
+  if (ord.boxLarge > 0) {
+    var largeTotal = ord.boxLarge * BOX_LARGE_PRICE;
+    rowsHtml += '<tr>';
+    rowsHtml += '<td class="c">'+rowNum+'</td>';
+    rowsHtml += '<td class="l">กล่องใหญ่</td>';
+    rowsHtml += '<td class="c">'+ord.boxLarge.toLocaleString()+' ใบ</td>';
+    rowsHtml += '<td class="r">'+BOX_LARGE_PRICE.toFixed(2)+'</td>';
+    rowsHtml += '<td class="r">'+largeTotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td>';
+    rowsHtml += '</tr>';
+    rowNum++;
+  }
+
+  // Compute totals
+  var subtotal = items.fillingTotal + (ord.boxSmall||0)*BOX_SMALL_PRICE + (ord.boxLarge||0)*BOX_LARGE_PRICE;
+  var discountAmt = ord.hasDiscount ? Math.round(items.fillingTotal * DISC_RATE) : 0;
+  var afterDisc = subtotal - discountAmt;
+
+  // Pay status note
+  var payStatusLabel = (PAY_LABELS[ord.payStatus] || 'รอชำระ').replace(/[✅⏳🔄📅]\s*/g,'');
+
+  var html = '';
+  html += '<div class="inv-head">';
+  html += '  <div class="inv-head-left">';
+  html += '    <div class="inv-co-name">'+escHtml(co.name)+'</div>';
+  html += '    <div class="inv-co-addr">'+escHtml(co.addr1)+'<br>'+escHtml(co.addr2)+'<br>โทร '+escHtml(co.phone)+' · Email: '+escHtml(co.email)+'<br>เลขประจำตัวผู้เสียภาษี '+escHtml(co.taxid)+' (สำนักงานใหญ่)</div>';
+  html += '  </div>';
+  html += '  <div class="inv-head-right">';
+  html += '    <div class="inv-doc-type">ใบส่งสินค้า / ใบแจ้งหนี้</div>';
+  html += '    <div class="inv-doc-no"><strong>เลขที่:</strong> '+invNo+'<br><strong>วันที่:</strong> '+escHtml(orderDate)+'<br><strong>ครบกำหนด:</strong> '+escHtml(deliveryDate)+'</div>';
+  html += '  </div>';
+  html += '</div>';
+
+  html += '<div class="inv-cust-row">';
+  html += '  <div class="inv-cust-left">';
+  html += '    <div><span class="lbl">ลูกค้า:</span><span class="val">'+escHtml(ord.branchName||'')+'</span></div>';
+  html += '    <div><span class="lbl">รหัสลูกค้า:</span><span class="val">'+escHtml(ord.branchId||'')+'</span></div>';
+  html += '    <div><span class="lbl">อ้างอิง:</span><span class="val">Lot. NO.'+lotNo+'</span></div>';
+  html += '  </div>';
+  html += '  <div class="inv-cust-right">';
+  html += '    <div><span class="lbl">วันที่ส่ง:</span><span class="val" style="color:#c00;">'+escHtml(deliveryDate)+'</span></div>';
+  html += '    <div><span class="lbl">สถานะชำระ:</span><span class="val">'+escHtml(payStatusLabel)+'</span></div>';
+  html += '  </div>';
+  html += '</div>';
+
+  html += '<table class="inv-tbl">';
+  html += '  <thead><tr><th style="width:8%;">No.</th><th style="width:42%;">รายการสินค้า</th><th style="width:18%;">จำนวน</th><th style="width:14%;">หน่วยละ</th><th style="width:18%;">จำนวนเงิน</th></tr></thead>';
+  html += '  <tbody>'+rowsHtml+'</tbody>';
+  html += '</table>';
+
+  html += '<div class="inv-totals">';
+  html += '  <div class="inv-totals-left">';
+  html += '    <div style="font-size:11px;color:#666;line-height:1.5;">';
+  html += '      <strong style="color:#1a1a1a;">หมายเหตุ:</strong><br>';
+  html += '      • ผงปาปริก้าแถมตามจำนวน (สูตรของบริษัท)<br>';
+  html += '      • กล่องบรรจุขายแยก ไม่รวมค่าส่ง<br>';
+  html += '      • ตรวจรับสินค้า ลงนามก่อนคืน';
+  html += '    </div>';
+  html += '  </div>';
+  html += '  <div class="inv-totals-right">';
+  html += '    <table>';
+  html += '      <tr><td class="lbl">รวมเป็นเงิน</td><td class="val">'+subtotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
+  if (discountAmt > 0) {
+    html += '    <tr><td class="lbl">หักส่วนลด 10%</td><td class="val" style="color:#c00;">-'+discountAmt.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
+    html += '    <tr><td class="lbl">ยอดหลังหักส่วนลด</td><td class="val">'+afterDisc.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
+  }
+  html += '      <tr class="grand"><td class="lbl">จำนวนเงินรวมทั้งสิ้น</td><td class="val">'+afterDisc.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
+  html += '    </table>';
+  html += '  </div>';
+  html += '</div>';
+
+  html += '<div class="inv-pay">';
+  html += '  <div class="inv-pay-left">';
+  html += '    <div style="margin-bottom:8px;"><strong>📋 ชำระเงิน</strong></div>';
+  html += '    <div>ชื่อบัญชี: <strong>'+escHtml(co.bankName)+'</strong></div>';
+  html += '    <div>ธนาคาร: <strong>'+escHtml(co.bankAcc)+'</strong></div>';
+  html += '    <div style="margin-top:10px;font-size:10.5px;color:#666;">สแกน QR ทางขวาเพื่อชำระเงิน<br>(สแกนแล้วใส่ยอดตามใบส่งของ)</div>';
+  html += '  </div>';
+  html += '  <div>';
+  if (media.payQr) {
+    html += '    <div class="inv-qr"><img src="'+media.payQr+'" alt="QR"></div>';
+    html += '    <div class="inv-qr-caption">สแกนเพื่อชำระเงิน</div>';
+  } else {
+    html += '    <div class="inv-qr">ยังไม่ได้ตั้ง QR<br>(ตั้งใน Settings)</div>';
+  }
+  html += '  </div>';
+  html += '</div>';
+
+  html += '<div class="inv-footer">';
+  html += '  <div>เอกสารออกโดยระบบ PuffStick Order System · v'+APP_VERSION+'</div>';
+  html += '  <div class="inv-footer-sig">';
+  html += '    <div class="inv-sig-block"><div class="inv-sig-line"></div><div>ผู้รับสินค้า</div></div>';
+  html += '    <div class="inv-sig-block"><div class="inv-sig-line"></div><div>ผู้ส่งสินค้า</div></div>';
+  html += '  </div>';
+  html += '</div>';
+
+  return html;
+}
+
+// Aggregate fillings across sub-locations for invoice display
+function aggregateOrderItems(ord) {
+  var result = { fillings: [], fillingTotal: 0, papG: 0, papExtraKg: 0 };
+  var fillingMap = {}; // {id: {name, qty}}
+  if (ord.locations && ord.locations.length) {
+    for (var li=0; li<ord.locations.length; li++) {
+      var loc = ord.locations[li];
+      var fills = loc.fillings || {};
+      var ids = Object.keys(fills);
+      for (var fi=0; fi<ids.length; fi++) {
+        var id = ids[fi]; var qty = fills[id] || 0;
+        if (qty <= 0) continue;
+        if (!fillingMap[id]) {
+          var meta = (typeof FILLINGS !== 'undefined') ? FILLINGS.filter(function(x){return x.id===id;})[0] : null;
+          fillingMap[id] = { name: (meta && meta.name) || id, qty: 0 };
+        }
+        fillingMap[id].qty += qty;
+      }
+    }
+  }
+  var price = ord.pricePerPiece || PRICE_PER_PC;
+  Object.keys(fillingMap).forEach(function(k){
+    result.fillings.push(fillingMap[k]);
+    result.fillingTotal += fillingMap[k].qty * price;
+  });
+  result.papG = ord.paprikaG || 0;
+  result.papExtraKg = ord.extraPaprikaKg || 0;
+  return result;
+}
+
+// Render invoice to template div, optionally as canvas → blob/dataURL
+function renderInvoiceToCanvas(ord, callback) {
+  var tplEl = document.getElementById('invoice-template');
+  if (!tplEl) { callback('Template element missing'); return; }
+  tplEl.innerHTML = renderInvoiceTemplate(ord);
+  tplEl.classList.add('visible');
+  // Allow fonts/layout to settle
+  setTimeout(function(){
+    if (typeof html2canvas !== 'function') {
+      tplEl.classList.remove('visible');
+      callback('html2canvas not loaded'); return;
+    }
+    html2canvas(tplEl, { scale: 2, backgroundColor: '#fff', useCORS: true, logging: false })
+      .then(function(canvas){
+        tplEl.classList.remove('visible');
+        callback(null, canvas);
+      })
+      .catch(function(err){
+        tplEl.classList.remove('visible');
+        callback(err.message || 'render failed');
+      });
+  }, 150);
+}
+
+// Download invoice as PNG (called from success page)
+function downloadInvoice() {
+  var orders = lsGet('orders') || [];
+  var ord = orders.length ? orders[0] : null;
+  if (!ord) { alert('ไม่พบออเดอร์'); return; }
+  var btn = event && event.target ? event.target : null;
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ กำลังสร้างใบส่งของ...'; }
+  renderInvoiceToCanvas(ord, function(err, canvas){
+    if (btn) { btn.disabled = false; btn.textContent = '📄 ดาวน์โหลดใบส่งของ'; }
+    if (err) { alert('❌ '+err); return; }
+    var link = document.createElement('a');
+    link.download = 'ใบส่งของ_'+(ord.branchName||'').replace(/[^a-zA-Z0-9ก-๙_-]/g,'')+'_Lot'+(ord.lotNo||'')+'.png';
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  });
+}
+
+// Send invoice to Telegram as photo (called automatically on order submit)
+function sendInvoiceToTelegram(ord, onComplete) {
+  var cfg = lsGet('settings') || {};
+  var token = cfg.tgBotToken;
+  var chatId = cfg.tgChatId;
+  if (!token || !chatId) { if (onComplete) onComplete(false, 'no-telegram'); return; }
+
+  renderInvoiceToCanvas(ord, function(err, canvas){
+    if (err) { if (onComplete) onComplete(false, err); return; }
+    canvas.toBlob(function(blob){
+      if (!blob) { if (onComplete) onComplete(false, 'blob failed'); return; }
+      var formData = new FormData();
+      formData.append('chat_id', chatId);
+      formData.append('photo', blob, 'invoice.png');
+      var caption = '🛒 ออเดอร์ใหม่ — ' + (ord.branchName||'') + '\n';
+      caption += 'Lot #' + (ord.lotNo||'') + ' · ' + (ord.total||0).toLocaleString() + ' ชิ้น\n';
+      caption += '💰 ยอด: ' + (ord.price||0).toLocaleString() + ' บาท\n';
+      caption += '📅 ส่ง: ' + (ord.deliveryDate||'');
+      formData.append('caption', caption);
+      fetch('https://api.telegram.org/bot'+token+'/sendPhoto', { method:'POST', body: formData })
+        .then(function(r){ return r.json(); })
+        .then(function(data){
+          if (onComplete) onComplete(data && data.ok, data && data.description);
+        })
+        .catch(function(e){ if (onComplete) onComplete(false, String(e)); });
+    }, 'image/png');
+  });
 }
 
 function loadMediaSettingsUI() {
@@ -1717,9 +2169,16 @@ function doConfirmOrder() {
     if (cfg.tgBotToken && cfg.tgChatId) {
       tgStatusEl.style.display = 'block';
       tgStatusEl.className = 'alert alert-info';
-      tgStatusEl.innerHTML = '⏳ กำลังส่งออเดอร์ไปยัง Telegram...';
+      tgStatusEl.innerHTML = '⏳ กำลังส่งออเดอร์ + ใบส่งของไปยัง Telegram...';
       sendTelegramRaw(ord.text, function(r) {
-        if (r.sent) { tgStatusEl.className = 'alert alert-success'; tgStatusEl.innerHTML = '✅ ส่ง Telegram สำเร็จ — แอดมินได้รับออเดอร์แล้ว'; }
+        if (r.sent) {
+          // Text sent OK — now send the invoice photo
+          tgStatusEl.innerHTML = '⏳ ส่งข้อความสำเร็จ · กำลังส่งใบส่งของ (รูป)...';
+          sendInvoiceToTelegram(ord, function(ok, info) {
+            if (ok) { tgStatusEl.className = 'alert alert-success'; tgStatusEl.innerHTML = '✅ ส่ง Telegram สำเร็จ — แอดมินได้รับออเดอร์ + ใบส่งของแล้ว'; }
+            else { tgStatusEl.className = 'alert alert-success'; tgStatusEl.innerHTML = '✅ ส่งข้อความสำเร็จ · ⚠️ ใบส่งของ(รูป)ส่งไม่สำเร็จ — แอดมินยังได้รับข้อความ'; }
+          });
+        }
         else { tgStatusEl.className = 'alert alert-danger'; tgStatusEl.innerHTML = '⚠️ ส่ง Telegram ไม่สำเร็จ: ' + r.reason + ' &nbsp; <button class="btn btn-xs btn-outline" style="margin-left:6px;padding:4px 10px;" onclick="retryTelegramFromSuccess()">ลองใหม่</button>'; }
       });
     } else {
@@ -2339,6 +2798,8 @@ function loadSettingsPage() {
   f('cfg-fb-url', cfg.fbUrl); f('cfg-fb-secret', cfg.fbSecret);
   var fp=document.getElementById('cfg-fb-path'); if(fp) fp.value=cfg.fbPath||'puffstick';
   loadMediaSettingsUI();
+  loadCompanyInfoUI();
+  loadQrPreview();
   updateFbSyncStatus();
 }
 
