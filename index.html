@@ -813,8 +813,8 @@ textarea.form-input{resize:none;line-height:1.5}
 
 <script>
 // ─── FIREBASE HARDCODED (ลูกค้าไม่ต้องตั้ง) ─────────────────────
-var FB_DEFAULT_URL  = 'https://puff-stick-fc-order-default-rtdb.asia-southeast1.firebasedatabase.app';
-var FB_DEFAULT_PATH = 'puffstick';
+var FB_DEFAULT_URL  = '';
+var FB_DEFAULT_PATH = '';
 
 // ============================================================
 // CONSTANTS
@@ -948,10 +948,10 @@ function initApp() {
     if (changed) lsSet('branches', bs);
   }
 
-  // Seed Telegram credentials on first run (admin can change later)
+  // Ensure settings exists
   var cfg = lsGet('settings') || {};
-  if (!cfg.tgBotToken) { cfg.tgBotToken = '8751318167:AAEQE7AtLhnWlXf0Ed6YTM8m2kb1BDtMrcQ'; }
-  if (!cfg.tgChatId)   { cfg.tgChatId   = '5566010745'; }
+  if (cfg.tgBotToken === undefined) { cfg.tgBotToken = ''; }
+  if (cfg.tgChatId === undefined)   { cfg.tgChatId   = ''; }
   lsSet('settings', cfg);
 
   setLandingDate();
@@ -1003,6 +1003,13 @@ function _imageToCompressedBase64(file, maxW, maxH, mime, quality, cb) {
       var c = document.createElement('canvas');
       c.width = nw; c.height = nh;
       var ctx = c.getContext('2d');
+      
+      // Draw white background if converting to JPEG to prevent transparency turning black
+      if (mime === 'image/jpeg') {
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, nw, nh);
+      }
+      
       ctx.drawImage(img, 0, 0, nw, nh);
       try { cb(null, c.toDataURL(mime||'image/jpeg', quality||0.82), nw, nh); }
       catch(err) { cb(err); }
@@ -1031,6 +1038,16 @@ function onHeroFile(input) {
   });
 }
 
+function saveLogo(dataUrl, w, h, statusEl, input) {
+  var media = lsGet('media') || {};
+  media.logoImage = dataUrl;
+  lsSet('media', media);
+  document.getElementById('cfg-logo-preview').src = dataUrl;
+  statusEl.textContent = '✅ บันทึกแล้ว · '+w+'×'+h+'px · '+Math.round(dataUrl.length/1024)+'KB';
+  applyCustomImages();
+  input.value = '';
+}
+
 function onLogoFile(input) {
   var file = input.files && input.files[0]; if (!file) return;
   if (file.type.indexOf('image/') !== 0) { alert('กรุณาเลือกไฟล์รูปภาพ'); return; }
@@ -1040,13 +1057,17 @@ function onLogoFile(input) {
   var mime = keepPng ? 'image/png' : 'image/jpeg';
   _imageToCompressedBase64(file, 400, 200, mime, 0.92, function(err, dataUrl, w, h) {
     if (err) { statusEl.textContent = '❌ '+err.message; return; }
-    var media = lsGet('media') || {};
-    media.logoImage = dataUrl;
-    lsSet('media', media);
-    document.getElementById('cfg-logo-preview').src = dataUrl;
-    statusEl.textContent = '✅ บันทึกแล้ว · '+w+'×'+h+'px';
-    applyCustomImages();
-    input.value = '';
+    
+    // Check if the PNG base64 size is still very large (e.g. > 250KB) and compress it to JPEG if so
+    if (mime === 'image/png' && dataUrl.length > 250000) {
+      statusEl.textContent = '⏳ รูปโลโก้ขนาดใหญ่เกินไป กำลังบีบอัดเพิ่มเติม...';
+      _imageToCompressedBase64(file, 400, 200, 'image/jpeg', 0.85, function(err2, dataUrl2, w2, h2) {
+        if (err2) { statusEl.textContent = '❌ '+err2.message; return; }
+        saveLogo(dataUrl2, w2, h2, statusEl, input);
+      });
+    } else {
+      saveLogo(dataUrl, w, h, statusEl, input);
+    }
   });
 }
 
@@ -1067,14 +1088,17 @@ function resetLogo() {
 function onQrFile(input) {
   var file = input.files && input.files[0]; if (!file) return;
   if (file.type.indexOf('image/') !== 0) { alert('กรุณาเลือกไฟล์รูปภาพ'); return; }
-  _imageToCompressedBase64(file, 600, 600, 'image/png', 0.92, function(err, dataUrl) {
+  
+  // Use image/jpeg, 350x350 max size, and 0.70 quality to ensure a tiny size (~10-25KB)
+  // to prevent exceeding the 5MB localStorage limit while maintaining readability.
+  _imageToCompressedBase64(file, 350, 350, 'image/jpeg', 0.70, function(err, dataUrl, w, h) {
     if (err) { alert('❌ '+err.message); return; }
     var media = lsGet('media') || {};
     media.payQr = dataUrl;
     lsSet('media', media);
     pushMediaToFirebase();
     loadQrPreview();
-    alert('✅ บันทึก QR Code แล้ว');
+    alert('✅ บันทึก QR Code แล้ว (' + Math.round(dataUrl.length/1024) + 'KB)');
     input.value = '';
   });
 }
@@ -1148,7 +1172,7 @@ function pushMediaToFirebase() {
     method:'PUT',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ _ts: ts, payQr: media.payQr || null })
-  }).catch(function(){});
+  }).catch(function(e){ console.warn('[FB] Push media failed:', e); });
 }
 
 function pullMediaFromFirebase() {
@@ -1161,7 +1185,7 @@ function pullMediaFromFirebase() {
     if (data.payQr) media.payQr = data.payQr;
     media._mediaTs = data._ts;
     lsSet('media', media);
-  }).catch(function(){});
+  }).catch(function(e){ console.warn('[FB] Pull media failed:', e); });
 }
 
 // ─── INVOICE GENERATION ─────────────────────────────────────────
@@ -1474,6 +1498,7 @@ function loadMediaSettingsUI() {
 function fbConfig() {
   var cfg = lsGet('settings') || {};
   var url  = cfg.fbUrl  || FB_DEFAULT_URL;
+  if (!url) return null;
   var path = (cfg.fbPath || FB_DEFAULT_PATH).replace(/^\/|\/$/g, '');
   var auth = cfg.fbSecret ? ('?auth='+encodeURIComponent(cfg.fbSecret)) : '';
   return { base: url + '/' + path, auth: auth };
@@ -2255,12 +2280,13 @@ function fbEndpoint(sub) {
 }
 function syncOrderToFirebase(ord) {
   var ep=fbEndpoint('orders/'+ord.id); if (!ep) return;
-  fetch(ep,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(ord)}).catch(function(){});
+  fetch(ep,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(ord)})
+    .catch(function(e){ console.warn('[FB] Order sync failed:', e); });
 }
 
 function deleteOrderFromFirebase(ordId) {
   var ep=fbEndpoint('orders/'+ordId); if (!ep) return;
-  fetch(ep, {method:'DELETE'}).catch(function(){});
+  fetch(ep, {method:'DELETE'}).catch(function(e){ console.warn('[FB] Order deletion failed:', e); });
 }
 
 // ─── CONFIG SYNC (admin password, Telegram) ────────────────────
@@ -2278,7 +2304,7 @@ function pushConfigToFirebase() {
   }
   payload._ts = Date.now();
   fetch(ep, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)})
-    .catch(function(){});
+    .catch(function(e){ console.warn('[FB] Config push failed:', e); });
 }
 
 function pullConfigFromFirebase() {
@@ -2297,7 +2323,7 @@ function pullConfigFromFirebase() {
     cfg._configTs = data._ts;
     lsSet('settings', cfg);
     console.log('[FB] Pulled config ts:', data._ts);
-  }).catch(function(){});
+  }).catch(function(e){ console.warn('[FB] Config pull failed:', e); });
 }
 
 // ─── VERSION CHECK ──────────────────────────────────────────────
@@ -2309,7 +2335,7 @@ function pushVersionToFirebase() {
     method: 'PUT',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ version: APP_VERSION, build: APP_BUILD, ts: Date.now() })
-  }).catch(function(){});
+  }).catch(function(e){ console.warn('[FB] Version push failed:', e); });
 }
 
 function checkVersionFromFirebase() {
@@ -2320,7 +2346,7 @@ function checkVersionFromFirebase() {
     if (compareVersion(data.version, APP_VERSION) > 0) {
       showUpdateBanner(data.version);
     }
-  }).catch(function(){});
+  }).catch(function(e){ console.warn('[FB] Version check failed:', e); });
 }
 
 function compareVersion(a, b) {
@@ -2401,13 +2427,19 @@ function loadAdminDash() {
   document.getElementById('adm-stat-pieces').textContent=totalPcs.toLocaleString();
   document.getElementById('adm-stat-revenue').textContent=revenue.toLocaleString();
   document.getElementById('adm-stat-pending').textContent=pending;
-  // Sync indicator — always ON since Firebase URL is hardcoded
+  // Sync indicator
   var sb = document.getElementById('adm-sync-badge');
   if (sb) {
-    sb.style.color = '#7AE7B5';
     var cfg = lsGet('settings') || {};
-    var url = (cfg.fbUrl || FB_DEFAULT_URL).replace(/^https?:\/\//,'');
-    sb.textContent = '🟢 SYNC ON · ' + url.slice(0,28) + '...';
+    var rawUrl = cfg.fbUrl || FB_DEFAULT_URL;
+    if (rawUrl) {
+      sb.style.color = '#7AE7B5';
+      var url = rawUrl.replace(/^https?:\/\//,'');
+      sb.textContent = '🟢 SYNC ON · ' + url.slice(0,28) + '...';
+    } else {
+      sb.style.color = 'var(--bad)';
+      sb.textContent = '🔴 SYNC OFF (No Firebase URL)';
+    }
   }
 }
 
@@ -2875,8 +2907,13 @@ function updateFbSyncStatus() {
   var ts = lsGet('branches_ts') || 0;
   var when = ts ? new Date(ts).toLocaleString('th-TH') : 'ยังไม่เคย sync';
   var cfg = lsGet('settings') || {};
-  var url = (cfg.fbUrl || FB_DEFAULT_URL).replace(/^https?:\/\//,'');
-  el.innerHTML = '🟢 Sync ON · ' + url.slice(0,35) + ' · last: ' + when;
+  var rawUrl = cfg.fbUrl || FB_DEFAULT_URL;
+  if (rawUrl) {
+    var url = rawUrl.replace(/^https?:\/\//,'');
+    el.innerHTML = '🟢 Sync ON · ' + url.slice(0,35) + ' · last: ' + when;
+  } else {
+    el.innerHTML = '🔴 Sync OFF (Firebase URL not configured)';
+  }
 }
 
 function manualSyncBranches() {
