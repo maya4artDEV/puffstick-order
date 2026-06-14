@@ -512,6 +512,7 @@ textarea.form-input{resize:none;line-height:1.5}
       <div style="font-size:12.5px;color:#555;line-height:1.5;">ระบบส่งใบส่งของไปทาง Telegram ของผู้ประสานงานเรียบร้อย<br>คุณสามารถดาวน์โหลดสำเนาด้านล่าง</div>
     </div>
 
+    <div id="suc-fb-status" class="alert" style="display:none;width:100%;max-width:340px;margin-bottom:10px;text-align:left;"></div>
     <div id="suc-tg-status" class="alert" style="display:none;width:100%;max-width:340px;margin-bottom:14px;text-align:left;"></div>
     <div id="suc-disc" class="disc-banner" style="display:none;width:100%;margin-bottom:20px;max-width:320px;">🌟 ยอดสะสมผ่าน 4,500 ชิ้นแล้ว!<br>ลอตถัดไปได้ส่วนลด 10%</div>
 
@@ -679,8 +680,10 @@ textarea.form-input{resize:none;line-height:1.5}
       </div>
       <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
         <button class="btn btn-outline btn-sm" onclick="manualPullOrders()" style="flex:1;min-width:140px;">📥 ดึงออเดอร์จาก cloud</button>
+        <button class="btn btn-outline btn-sm" onclick="manualRetryUnsynced()" style="flex:1;min-width:140px;">🔁 Re-sync ออเดอร์ค้าง</button>
       </div>
       <div id="fb-sync-status" class="text-xs text-gray" style="margin-top:8px;"></div>
+      <div id="fb-pending-status" class="text-xs" style="margin-top:4px;color:var(--brown);"></div>
     </div>
     <div class="card">
       <div class="card-title">🔒 เปลี่ยนรหัสผ่านแอดมิน</div>
@@ -833,8 +836,8 @@ var FILLINGS = [
   {id:'choc',   name:'ช็อกโกแลต',      emoji:'🍫'}
 ];
 
-var APP_VERSION = '3.3.4';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
-var APP_BUILD   = '2026.06.14';  // วันที่ deploy
+var APP_VERSION = '3.3.6';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
+var APP_BUILD   = '2026.06.14c';  // วันที่ deploy
 
 var PRICE_PER_PC = 20;
 var DISC_THRESH  = 4500;
@@ -966,6 +969,8 @@ function initApp() {
   pushVersionToFirebase();
   // Check if there's a newer version somewhere → show banner
   setTimeout(checkVersionFromFirebase, 1500);
+  // Retry any orders that failed to sync previously
+  setTimeout(retryUnsyncedOrders, 2500);
 }
 
 function setLandingDate() {
@@ -1172,7 +1177,12 @@ function pushMediaToFirebase() {
     method:'PUT',
     headers:{'Content-Type':'application/json'},
     body: JSON.stringify({ _ts: ts, payQr: media.payQr || null })
-  }).catch(function(e){ console.warn('[FB] Push media failed:', e); });
+  })
+    .then(function(r){
+      if (r.ok) { media._mediaTs = ts; lsSet('media', media); console.log('[FB] Media pushed'); }
+      else console.warn('[FB] Push media HTTP error:', r.status);
+    })
+    .catch(function(e){ console.warn('[FB] Push media network error:', e); });
 }
 
 function pullMediaFromFirebase() {
@@ -1332,9 +1342,9 @@ function renderInvoiceTemplate(ord) {
     html += '    <tr><td class="lbl">หักส่วนลด 10%</td><td class="val" style="color:#c00;">-'+discountAmt.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
     html += '    <tr><td class="lbl">ยอดหลังหักส่วนลด</td><td class="val">'+afterDisc.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
   }
-  // VAT / Deposit fields — blank by default (Tony ยังไม่เก็บ VAT แฟรนไชส์ทุกราย)
-  html += '      <tr><td class="lbl">หักเงินมัดจำ</td><td class="val" style="color:#999;">-</td></tr>';
-  html += '      <tr><td class="lbl">จำนวนเงินหลังหักมัดจำ</td><td class="val">'+afterDisc.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
+  // Optional adjustment line — blank by default (was "หักเงินมัดจำ", but Tony doesn't use deposit)
+  html += '      <tr><td class="lbl">หักลด (อื่นๆ)</td><td class="val" style="color:#999;">-</td></tr>';
+  html += '      <tr><td class="lbl">ยอดสุทธิก่อนภาษี</td><td class="val">'+afterDisc.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
   html += '      <tr><td class="lbl">จำนวนภาษีมูลค่าเพิ่ม 7.00%</td><td class="val" style="color:#999;">-</td></tr>';
   html += '      <tr class="grand"><td class="lbl">จำนวนเงินรวมทั้งสิ้น</td><td class="val">'+afterDisc.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
   html += '    </table>';
@@ -2220,7 +2230,23 @@ function doConfirmOrder() {
     saveBranches(branches);
   }
 
-  syncOrderToFirebase(ord);
+  // Sync to Firebase + show explicit status to customer
+  var fbStatusEl = document.getElementById('suc-fb-status');
+  if (fbStatusEl) {
+    fbStatusEl.style.display = 'block';
+    fbStatusEl.className = 'alert alert-info';
+    fbStatusEl.innerHTML = '⏳ กำลังบันทึกออเดอร์ไป cloud...';
+  }
+  syncOrderToFirebase(ord).then(function(res){
+    if (!fbStatusEl) return;
+    if (res.ok) {
+      fbStatusEl.className = 'alert alert-success';
+      fbStatusEl.innerHTML = '✅ บันทึกออเดอร์ขึ้น cloud สำเร็จ — แอดมินเห็นออเดอร์ของคุณแล้ว';
+    } else {
+      fbStatusEl.className = 'alert alert-danger';
+      fbStatusEl.innerHTML = '⚠️ บันทึก cloud ยังไม่สำเร็จ ('+res.reason+') — ออเดอร์ของคุณอยู่ในเครื่องและจะ sync เองเมื่อกลับมาเปิดแอป กรุณาแจ้งผู้ประสานงานด้วย';
+    }
+  });
 
   document.getElementById('suc-lot').textContent='Lot #'+ord.lotNo+' · รวม '+ord.total.toLocaleString()+' ชิ้น';
   document.getElementById('suc-detail').textContent='กำหนดส่ง '+ord.deliveryDate+' · '+ord.price.toLocaleString()+' บาท';
@@ -2283,9 +2309,97 @@ function fbEndpoint(sub) {
   return base;
 }
 function syncOrderToFirebase(ord) {
-  var ep=fbEndpoint('orders/'+ord.id); if (!ep) return;
-  fetch(ep,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(ord)})
-    .catch(function(e){ console.warn('[FB] Order sync failed:', e); });
+  var ep=fbEndpoint('orders/'+ord.id);
+  if (!ep) {
+    markOrderUnsynced(ord.id, 'no-firebase-config');
+    return Promise.resolve({ok:false, reason:'no-firebase-config'});
+  }
+  // Stamp syncedAt at time of successful push
+  var attemptTs = Date.now();
+  var bodyOrd = JSON.parse(JSON.stringify(ord));  // shallow clone
+  bodyOrd.syncedAt = attemptTs;
+  return fetch(ep,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(bodyOrd)})
+    .then(function(r){
+      if (r.ok) {
+        // Save syncedAt to local copy too
+        var orders = lsGet('orders') || [];
+        if (Array.isArray(orders)) {
+          for (var i=0; i<orders.length; i++) {
+            if (orders[i].id === ord.id) { orders[i].syncedAt = attemptTs; break; }
+          }
+          lsSet('orders', orders);
+        }
+        // Check if this was a late-sync (>5 min between order create and now)
+        var orderTs = parseInt(String(ord.id||'o0').slice(1), 10) || attemptTs;
+        var lagMs = attemptTs - orderTs;
+        var wasUnsynced = !!(lsGet('unsynced_orders')||{})[ord.id];
+        clearOrderUnsynced(ord.id);
+        if (wasUnsynced && lagMs > 5*60*1000) {
+          // Send Telegram notification about late-synced order
+          notifyLateSync(ord, lagMs);
+        }
+        console.log('[FB] Order synced:', ord.id);
+        return {ok:true};
+      } else {
+        markOrderUnsynced(ord.id, 'http-'+r.status);
+        console.warn('[FB] Order sync HTTP error:', r.status, ord.id);
+        return {ok:false, reason:'http-'+r.status};
+      }
+    })
+    .catch(function(e){
+      markOrderUnsynced(ord.id, 'network');
+      console.warn('[FB] Order sync network error:', e, ord.id);
+      return {ok:false, reason:'network'};
+    });
+}
+
+// Notify Tony via Telegram when an order syncs late (was stuck on customer device)
+function notifyLateSync(ord, lagMs) {
+  var cfg = lsGet('settings') || {};
+  if (!cfg.tgBotToken || !cfg.tgChatId) return;
+  var hours = Math.round(lagMs / (60*60*1000));
+  var lagStr = hours >= 24 ? Math.round(hours/24)+' วัน' : hours+' ชั่วโมง';
+  var msg = '🔁 ออเดอร์ค้าง sync เพิ่งเข้ามา\n';
+  msg += '━━━━━━━━━━━━━━\n';
+  msg += '⚠️ ออเดอร์นี้ ลูกค้าสั่งไว้แล้ว ' + lagStr + ' ที่ผ่านมา\n';
+  msg += '   แต่เพิ่ง sync ขึ้น cloud ตอนนี้\n\n';
+  msg += '🏪 สาขา: ' + (ord.branchName||'') + '\n';
+  msg += '📋 Lot #' + (ord.lotNo||'') + '\n';
+  msg += '📅 วันสั่ง: ' + (ord.orderDate||'') + '\n';
+  msg += '📦 วันส่ง: ' + (ord.deliveryDate||'') + '\n';
+  msg += '🥐 จำนวน: ' + (ord.total||0).toLocaleString() + ' ชิ้น\n';
+  msg += '💰 ยอด: ' + (ord.price||0).toLocaleString() + ' บาท';
+  fetch('https://api.telegram.org/bot'+cfg.tgBotToken+'/sendMessage', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ chat_id: cfg.tgChatId, text: msg })
+  }).then(function(r){
+    if (r.ok) console.log('[FB] Late-sync notification sent for', ord.id);
+  }).catch(function(){});
+}
+
+// Track orders that failed to sync — retry on next app load
+function markOrderUnsynced(ordId, reason) {
+  var pending = lsGet('unsynced_orders') || {};
+  pending[ordId] = { ts: Date.now(), reason: reason };
+  lsSet('unsynced_orders', pending);
+}
+function clearOrderUnsynced(ordId) {
+  var pending = lsGet('unsynced_orders') || {};
+  if (pending[ordId]) { delete pending[ordId]; lsSet('unsynced_orders', pending); }
+}
+// Called on app load — retry pending orders
+function retryUnsyncedOrders() {
+  var pending = lsGet('unsynced_orders') || {};
+  var ids = Object.keys(pending);
+  if (ids.length === 0) return;
+  console.log('[FB] Retrying '+ids.length+' unsynced order(s)');
+  var orders = lsGet('orders') || [];
+  if (!Array.isArray(orders)) return;
+  for (var i=0; i<ids.length; i++) {
+    var ord = orders.filter(function(o){return o.id===ids[i];})[0];
+    if (ord) syncOrderToFirebase(ord);
+    else clearOrderUnsynced(ids[i]); // order no longer in local — give up
+  }
 }
 
 function deleteOrderFromFirebase(ordId) {
@@ -2299,7 +2413,7 @@ var CONFIG_SYNC_FIELDS = ['adminPassword','tgBotToken','tgChatId'];
 
 function pushConfigToFirebase() {
   var ep = fbEndpoint('config');
-  if (!ep) return;
+  if (!ep) return Promise.resolve({ok:false, reason:'no-firebase-config'});
   var cfg = lsGet('settings') || {};
   var payload = {};
   for (var i=0; i<CONFIG_SYNC_FIELDS.length; i++) {
@@ -2307,8 +2421,23 @@ function pushConfigToFirebase() {
     if (cfg[k]) payload[k] = cfg[k];
   }
   payload._ts = Date.now();
-  fetch(ep, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)})
-    .catch(function(e){ console.warn('[FB] Config push failed:', e); });
+  return fetch(ep, {method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)})
+    .then(function(r){
+      if (r.ok) {
+        // Update local _configTs so subsequent pulls don't overwrite our just-pushed values
+        cfg._configTs = payload._ts;
+        lsSet('settings', cfg);
+        console.log('[FB] Config pushed ts:', payload._ts);
+        return {ok:true};
+      } else {
+        console.warn('[FB] Config push HTTP error:', r.status);
+        return {ok:false, reason:'http-'+r.status};
+      }
+    })
+    .catch(function(e){
+      console.warn('[FB] Config push network error:', e);
+      return {ok:false, reason:'network'};
+    });
 }
 
 function pullConfigFromFirebase() {
@@ -2339,7 +2468,11 @@ function pushVersionToFirebase() {
     method: 'PUT',
     headers: {'Content-Type': 'application/json'},
     body: JSON.stringify({ version: APP_VERSION, build: APP_BUILD, ts: Date.now() })
-  }).catch(function(e){ console.warn('[FB] Version push failed:', e); });
+  })
+    .then(function(r){
+      if (!r.ok) console.warn('[FB] Version push HTTP error:', r.status);
+    })
+    .catch(function(e){ console.warn('[FB] Version push network error:', e); });
 }
 
 function checkVersionFromFirebase() {
@@ -2918,6 +3051,36 @@ function updateFbSyncStatus() {
   } else {
     el.innerHTML = '🔴 Sync OFF (Firebase URL not configured)';
   }
+  // Show pending unsynced order count
+  var pendEl = document.getElementById('fb-pending-status');
+  if (pendEl) {
+    var pending = lsGet('unsynced_orders') || {};
+    var n = Object.keys(pending).length;
+    if (n > 0) {
+      pendEl.innerHTML = '⚠️ มีออเดอร์ค้าง sync: ' + n + ' รายการ — กดปุ่ม "Re-sync ออเดอร์ค้าง" เพื่อลองใหม่';
+      pendEl.style.color = '#c00';
+    } else {
+      pendEl.innerHTML = '✅ ทุกออเดอร์ sync ครบ';
+      pendEl.style.color = '';
+    }
+  }
+}
+
+function manualRetryUnsynced() {
+  var pending = lsGet('unsynced_orders') || {};
+  var n = Object.keys(pending).length;
+  var el = document.getElementById('fb-sync-status');
+  if (n === 0) { if (el) el.innerHTML = '✅ ไม่มีออเดอร์ค้าง — ทุกอย่าง sync ครบแล้ว'; return; }
+  if (el) el.innerHTML = '⏳ กำลัง re-sync ' + n + ' รายการ...';
+  retryUnsyncedOrders();
+  setTimeout(function(){
+    var rem = Object.keys(lsGet('unsynced_orders') || {}).length;
+    if (el) {
+      if (rem === 0) el.innerHTML = '✅ Re-sync สำเร็จทั้งหมด ' + n + ' รายการ';
+      else el.innerHTML = '⚠️ Re-sync ได้ ' + (n-rem) + '/' + n + ' รายการ · ยังค้าง ' + rem + ' (เช็ค Firebase Rules)';
+    }
+    updateFbSyncStatus();
+  }, 2000);
 }
 
 function manualSyncBranches() {
