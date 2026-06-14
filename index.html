@@ -813,8 +813,8 @@ textarea.form-input{resize:none;line-height:1.5}
 
 <script>
 // ─── FIREBASE HARDCODED (ลูกค้าไม่ต้องตั้ง) ─────────────────────
-var FB_DEFAULT_URL  = '';
-var FB_DEFAULT_PATH = '';
+var FB_DEFAULT_URL  = 'https://puff-stick-fc-order-default-rtdb.asia-southeast1.firebasedatabase.app';
+var FB_DEFAULT_PATH = 'puffstick';
 
 // ============================================================
 // CONSTANTS
@@ -833,8 +833,8 @@ var FILLINGS = [
   {id:'choc',   name:'ช็อกโกแลต',      emoji:'🍫'}
 ];
 
-var APP_VERSION = '3.3.1';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
-var APP_BUILD   = '2026.06.05';  // วันที่ deploy
+var APP_VERSION = '3.3.4';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
+var APP_BUILD   = '2026.06.14';  // วันที่ deploy
 
 var PRICE_PER_PC = 20;
 var DISC_THRESH  = 4500;
@@ -1332,6 +1332,10 @@ function renderInvoiceTemplate(ord) {
     html += '    <tr><td class="lbl">หักส่วนลด 10%</td><td class="val" style="color:#c00;">-'+discountAmt.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
     html += '    <tr><td class="lbl">ยอดหลังหักส่วนลด</td><td class="val">'+afterDisc.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
   }
+  // VAT / Deposit fields — blank by default (Tony ยังไม่เก็บ VAT แฟรนไชส์ทุกราย)
+  html += '      <tr><td class="lbl">หักเงินมัดจำ</td><td class="val" style="color:#999;">-</td></tr>';
+  html += '      <tr><td class="lbl">จำนวนเงินหลังหักมัดจำ</td><td class="val">'+afterDisc.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
+  html += '      <tr><td class="lbl">จำนวนภาษีมูลค่าเพิ่ม 7.00%</td><td class="val" style="color:#999;">-</td></tr>';
   html += '      <tr class="grand"><td class="lbl">จำนวนเงินรวมทั้งสิ้น</td><td class="val">'+afterDisc.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
   html += '    </table>';
   html += '  </div>';
