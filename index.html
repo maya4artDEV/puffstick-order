@@ -561,6 +561,11 @@ textarea.form-input{resize:none;line-height:1.5}
         </div>
         <button class="btn btn-outline btn-sm" onclick="manualDispatchNotifications()" style="font-size:12px;padding:6px 12px;">🔁 ส่งแจ้งเตือนเดี๋ยวนี้</button>
       </div>
+      <div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);display:flex;gap:6px;flex-wrap:wrap;">
+        <button class="btn btn-ghost btn-sm" onclick="recoverBacklogNotifications(24)" style="font-size:11px;padding:5px 10px;flex:1;min-width:130px;">🔍 ตรวจย้อน 24 ชม.</button>
+        <button class="btn btn-ghost btn-sm" onclick="recoverBacklogNotifications(48)" style="font-size:11px;padding:5px 10px;flex:1;min-width:130px;">🔍 ตรวจย้อน 48 ชม.</button>
+        <button class="btn btn-ghost btn-sm" onclick="recoverBacklogNotifications(168)" style="font-size:11px;padding:5px 10px;flex:1;min-width:130px;">🔍 ตรวจย้อน 7 วัน</button>
+      </div>
     </div>
     <div class="menu-row" onclick="openAdminTab('branches')"><div class="menu-row-text"><div class="title">🏪 จัดการสาขา</div><div class="sub">เพิ่ม/แก้ไขสาขา, PIN, เลข Lot</div></div><span class="chevron">›</span></div>
     <div class="menu-row" onclick="openAdminTab('history')"><div class="menu-row-text"><div class="title">📋 ประวัติออเดอร์</div><div class="sub">ดูออเดอร์, อัปเดตสถานะ, export CSV</div></div><span class="chevron">›</span></div>
@@ -2584,6 +2589,73 @@ function manualDispatchNotifications() {
   setTimeout(function(){
     updateNotifyStatusCard();
   }, 3000);
+}
+
+// ─── BACKLOG RECOVERY: notify orders Tony missed (pre-v3.4.0) ───
+// Finds orders within a time range that haven't been notified yet,
+// marks them as notified=false (so the regular dispatcher picks them up).
+function findBacklogCandidates(sinceTs) {
+  var orders = lsGet('orders') || [];
+  if (!Array.isArray(orders)) return [];
+  return orders.filter(function(o){
+    if (!o || !o.id) return false;
+    if (o.notified === true) return false;  // already notified
+    var orderTs = parseInt(String(o.id||'o0').slice(1), 10) || 0;
+    return orderTs >= sinceTs;
+  });
+}
+
+function recoverBacklogNotifications(hoursBack) {
+  hoursBack = hoursBack || 48;
+  var sinceTs = Date.now() - hoursBack * 60 * 60 * 1000;
+  var candidates = findBacklogCandidates(sinceTs);
+  if (candidates.length === 0) {
+    alert('✅ ไม่พบออเดอร์ที่ยังไม่ได้แจ้งเตือนในช่วง ' + hoursBack + ' ชั่วโมงที่ผ่านมา');
+    return;
+  }
+  // Build preview list (top 5)
+  var preview = candidates.slice(0, 5).map(function(o){
+    return '• ' + (o.branchName||'?') + ' Lot#' + (o.lotNo||'?') + ' · ' + (o.total||0).toLocaleString() + ' ชิ้น · ' + (o.orderDate||'?');
+  }).join('\n');
+  if (candidates.length > 5) preview += '\n... และอีก ' + (candidates.length - 5) + ' รายการ';
+
+  var ok = confirm(
+    '🔍 พบ ' + candidates.length + ' ออเดอร์ที่ยังไม่ได้แจ้งเตือน\n' +
+    '(ในช่วง ' + hoursBack + ' ชั่วโมงล่าสุด)\n\n' +
+    preview + '\n\n' +
+    '👉 ส่ง Telegram สำหรับทุกรายการ?\n' +
+    '(จะส่งทีละรายการ ใช้เวลาประมาณ ' + Math.ceil(candidates.length / 5 * 30) + ' วินาที)'
+  );
+  if (!ok) return;
+
+  // Mark all candidates as notified=false in local + Firebase
+  var orders = lsGet('orders') || [];
+  var ids = candidates.map(function(c){return c.id;});
+  for (var i=0; i<orders.length; i++) {
+    if (ids.indexOf(orders[i].id) >= 0) {
+      orders[i].notified = false;
+      orders[i].notifyAttempts = 0;
+    }
+  }
+  lsSet('orders', orders);
+
+  // Push notified=false to Firebase for each (so dispatcher considers them)
+  candidates.forEach(function(c){
+    var ep = fbEndpoint('orders/'+c.id);
+    if (!ep) return;
+    fetch(ep, {
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({notified: false, notifyError: null})
+    }).catch(function(){});
+  });
+
+  // Trigger dispatcher
+  setTimeout(function(){
+    dispatchPendingNotifications();
+    updateNotifyStatusCard();
+    alert('🚀 เริ่มส่ง Telegram ' + candidates.length + ' รายการ — ดู Notification card ใน Dashboard เพื่อติดตามผล');
+  }, 800);
 }
 
 // Track orders that failed to sync — retry on next app load
