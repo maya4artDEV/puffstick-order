@@ -552,6 +552,16 @@ textarea.form-input{resize:none;line-height:1.5}
       <div class="sum-item"><div class="sum-val" id="adm-stat-revenue">—</div><div class="sum-lbl">ยอดรวม (บาท)</div></div>
       <div class="sum-item"><div class="sum-val" id="adm-stat-pending">—</div><div class="sum-lbl">รอชำระ</div></div>
     </div>
+    <!-- v3.4.0: Notification dispatcher status -->
+    <div id="notify-status-card" class="card" style="margin-bottom:12px;padding:10px 14px;display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;">
+        <div>
+          <div style="font-weight:700;font-size:13px;color:var(--brown-dark);" id="notify-status-title">🔔 Notification Dispatcher</div>
+          <div style="font-size:12px;color:var(--gray);margin-top:2px;" id="notify-status-detail"></div>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="manualDispatchNotifications()" style="font-size:12px;padding:6px 12px;">🔁 ส่งแจ้งเตือนเดี๋ยวนี้</button>
+      </div>
+    </div>
     <div class="menu-row" onclick="openAdminTab('branches')"><div class="menu-row-text"><div class="title">🏪 จัดการสาขา</div><div class="sub">เพิ่ม/แก้ไขสาขา, PIN, เลข Lot</div></div><span class="chevron">›</span></div>
     <div class="menu-row" onclick="openAdminTab('history')"><div class="menu-row-text"><div class="title">📋 ประวัติออเดอร์</div><div class="sub">ดูออเดอร์, อัปเดตสถานะ, export CSV</div></div><span class="chevron">›</span></div>
     <div class="menu-row" onclick="openAdminTab('accum')"><div class="menu-row-text"><div class="title">🎯 ยอดสะสม &amp; ส่วนลด</div><div class="sub">ติดตามยอดสะสมแต่ละสาขา</div></div><span class="chevron">›</span></div>
@@ -836,8 +846,8 @@ var FILLINGS = [
   {id:'choc',   name:'ช็อกโกแลต',      emoji:'🍫'}
 ];
 
-var APP_VERSION = '3.3.6';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
-var APP_BUILD   = '2026.06.14c';  // วันที่ deploy
+var APP_VERSION = '3.4.0';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
+var APP_BUILD   = '2026.06.14-arch';  // วันที่ deploy
 
 var PRICE_PER_PC = 20;
 var DISC_THRESH  = 4500;
@@ -2216,6 +2226,12 @@ function retryTelegramFromSuccess() {
 function doConfirmOrder() {
   var ord=APP.order; if (!ord) { alert('กรุณาตรวจสอบออเดอร์ก่อน'); return; }
   ord.id = 'o'+Date.now();
+  // v3.4.0: Mark for admin-side notification pickup
+  ord.notified = false;        // becomes true when admin sends Telegram
+  ord.notifiedAt = null;
+  ord.notifiedBy = null;
+  ord.notifyAttempts = 0;
+
   // Detect if THIS order causes the branch to cross threshold (for celebration popup)
   var baBefore = computeMonthlyAccum(ord.branchId);
   var orders=lsGet('orders')||[]; orders.unshift(ord); lsSet('orders', orders);
@@ -2230,21 +2246,21 @@ function doConfirmOrder() {
     saveBranches(branches);
   }
 
-  // Sync to Firebase + show explicit status to customer
+  // Sync to Firebase — this is the ONLY thing that matters for branch
   var fbStatusEl = document.getElementById('suc-fb-status');
   if (fbStatusEl) {
     fbStatusEl.style.display = 'block';
     fbStatusEl.className = 'alert alert-info';
-    fbStatusEl.innerHTML = '⏳ กำลังบันทึกออเดอร์ไป cloud...';
+    fbStatusEl.innerHTML = '⏳ กำลังส่งออเดอร์ไประบบ...';
   }
   syncOrderToFirebase(ord).then(function(res){
     if (!fbStatusEl) return;
     if (res.ok) {
       fbStatusEl.className = 'alert alert-success';
-      fbStatusEl.innerHTML = '✅ บันทึกออเดอร์ขึ้น cloud สำเร็จ — แอดมินเห็นออเดอร์ของคุณแล้ว';
+      fbStatusEl.innerHTML = '✅ ออเดอร์ส่งถึงระบบสำเร็จ — ผู้ประสานงานจะได้รับการแจ้งเตือน';
     } else {
       fbStatusEl.className = 'alert alert-danger';
-      fbStatusEl.innerHTML = '⚠️ บันทึก cloud ยังไม่สำเร็จ ('+res.reason+') — ออเดอร์ของคุณอยู่ในเครื่องและจะ sync เองเมื่อกลับมาเปิดแอป กรุณาแจ้งผู้ประสานงานด้วย';
+      fbStatusEl.innerHTML = '⚠️ ยังส่งไม่สำเร็จ ('+res.reason+') — ออเดอร์อยู่ในเครื่องและจะส่งให้เองเมื่อเชื่อมอินเทอร์เน็ตอีกครั้ง';
     }
   });
 
@@ -2252,29 +2268,10 @@ function doConfirmOrder() {
   document.getElementById('suc-detail').textContent='กำหนดส่ง '+ord.deliveryDate+' · '+ord.price.toLocaleString()+' บาท';
   document.getElementById('suc-disc').style.display=newReach?'block':'none';
 
-  // Show "sending Telegram" indicator immediately, fire request in background
+  // v3.4.0: Removed Telegram from branch flow — admin handles notification
+  // (Hide old Telegram status element if still in DOM)
   var tgStatusEl = document.getElementById('suc-tg-status');
-  if (tgStatusEl) {
-    var cfg = lsGet('settings') || {};
-    if (cfg.tgBotToken && cfg.tgChatId) {
-      tgStatusEl.style.display = 'block';
-      tgStatusEl.className = 'alert alert-info';
-      tgStatusEl.innerHTML = '⏳ กำลังส่งออเดอร์ + ใบส่งของไปยัง Telegram...';
-      sendTelegramRaw(ord.text, function(r) {
-        if (r.sent) {
-          // Text sent OK — now send the invoice photo
-          tgStatusEl.innerHTML = '⏳ ส่งข้อความสำเร็จ · กำลังส่งใบส่งของ (รูป)...';
-          sendInvoiceToTelegram(ord, function(ok, info) {
-            if (ok) { tgStatusEl.className = 'alert alert-success'; tgStatusEl.innerHTML = '✅ ส่ง Telegram สำเร็จ — แอดมินได้รับออเดอร์ + ใบส่งของแล้ว'; }
-            else { tgStatusEl.className = 'alert alert-success'; tgStatusEl.innerHTML = '✅ ส่งข้อความสำเร็จ · ⚠️ ใบส่งของ(รูป)ส่งไม่สำเร็จ — แอดมินยังได้รับข้อความ'; }
-          });
-        }
-        else { tgStatusEl.className = 'alert alert-danger'; tgStatusEl.innerHTML = '⚠️ ส่ง Telegram ไม่สำเร็จ: ' + r.reason + ' &nbsp; <button class="btn btn-xs btn-outline" style="margin-left:6px;padding:4px 10px;" onclick="retryTelegramFromSuccess()">ลองใหม่</button>'; }
-      });
-    } else {
-      tgStatusEl.style.display = 'none';
-    }
-  }
+  if (tgStatusEl) tgStatusEl.style.display = 'none';
 
   goPage('page-success');
 }
@@ -2375,6 +2372,218 @@ function notifyLateSync(ord, lagMs) {
   }).then(function(r){
     if (r.ok) console.log('[FB] Late-sync notification sent for', ord.id);
   }).catch(function(){});
+}
+
+// ─── v3.4.0: ADMIN-SIDE NOTIFICATION DISPATCHER ─────────────────
+// Branch's job: write order to Firebase with notified=false
+// Admin's job: poll Firebase, send Telegram for unnotified orders, mark notified=true
+// This removes branch's dependency on Telegram credentials entirely.
+
+// Track which orders we're currently processing (per-tab in-flight lock)
+var _notifyInFlight = {};
+
+// Patch single order's notified status in Firebase
+function patchOrderNotified(ordId, success, errorMsg) {
+  var ep = fbEndpoint('orders/'+ordId);
+  if (!ep) return Promise.resolve(false);
+  var deviceId = getOrCreateDeviceId();
+  var patch = {
+    notified: success,
+    notifiedAt: success ? Date.now() : null,
+    notifiedBy: success ? deviceId : null,
+    notifyError: success ? null : (errorMsg || '')
+  };
+  return fetch(ep, {
+    method:'PATCH',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(patch)
+  }).then(function(r){ return r.ok; }).catch(function(){ return false; });
+}
+
+// Generate or get a stable device ID for this browser
+function getOrCreateDeviceId() {
+  var did = lsGet('device_id');
+  if (!did) {
+    did = 'd' + Date.now() + '-' + Math.random().toString(36).slice(2,8);
+    lsSet('device_id', did);
+  }
+  return did;
+}
+
+// Main dispatcher — called periodically + on admin page open
+function dispatchPendingNotifications() {
+  // Only admin should dispatch (avoid all branches racing to send)
+  if (!APP.adminIn) return;
+
+  // Need Telegram credentials
+  var cfg = lsGet('settings') || {};
+  if (!cfg.tgBotToken || !cfg.tgChatId) {
+    return; // can't notify — no credentials on this device
+  }
+
+  var orders = lsGet('orders') || [];
+  if (!Array.isArray(orders) || orders.length === 0) return;
+
+  // Find candidates: notified=false, not in flight, age < 7 days
+  var now = Date.now();
+  var maxAge = 7 * 24 * 60 * 60 * 1000;
+  var candidates = orders.filter(function(o){
+    if (!o || !o.id) return false;
+    if (o.notified === true) return false;         // already notified
+    if (o.notified === undefined) return false;    // legacy order (pre-v3.4.0) — skip
+    if (_notifyInFlight[o.id]) return false;       // already being processed
+    var orderTs = parseInt(String(o.id||'o0').slice(1), 10) || 0;
+    if (now - orderTs > maxAge) return false;      // too old, skip
+    return true;
+  });
+
+  if (candidates.length === 0) return;
+
+  console.log('[Notify] Dispatching ' + candidates.length + ' pending notification(s)');
+
+  // Process one at a time to avoid Telegram rate limits + race conditions
+  processNotificationQueue(candidates.slice(0, 5)); // cap per cycle
+}
+
+function processNotificationQueue(queue) {
+  if (queue.length === 0) return;
+  var ord = queue.shift();
+  if (_notifyInFlight[ord.id]) {
+    processNotificationQueue(queue);
+    return;
+  }
+  _notifyInFlight[ord.id] = true;
+
+  // STEP 1: Claim this order in Firebase BEFORE sending (prevent double-send across devices)
+  // Strategy: PATCH notified=true optimistically. If we fail to send later → revert.
+  patchOrderNotified(ord.id, true, null).then(function(claimed){
+    if (!claimed) {
+      console.warn('[Notify] Failed to claim order, skipping:', ord.id);
+      delete _notifyInFlight[ord.id];
+      processNotificationQueue(queue);
+      return;
+    }
+
+    // STEP 2: Update local copy too
+    var orders = lsGet('orders') || [];
+    if (Array.isArray(orders)) {
+      for (var i=0; i<orders.length; i++) {
+        if (orders[i].id === ord.id) {
+          orders[i].notified = true;
+          orders[i].notifiedAt = Date.now();
+          orders[i].notifiedBy = getOrCreateDeviceId();
+          break;
+        }
+      }
+      lsSet('orders', orders);
+    }
+
+    // STEP 3: Send Telegram (text + invoice image)
+    sendTelegramRaw(ord.text || formatOrderForTelegram(ord), function(r) {
+      if (r.sent) {
+        // Text sent — try invoice image
+        sendInvoiceToTelegram(ord, function(ok, info){
+          console.log('[Notify] Order ' + ord.id + ' notified ✓ (image: ' + (ok?'ok':'fail') + ')');
+          delete _notifyInFlight[ord.id];
+          processNotificationQueue(queue);
+        });
+      } else {
+        // Text send failed — REVERT claim so another device can retry
+        console.warn('[Notify] Telegram send failed for', ord.id, '-', r.reason);
+        patchOrderNotified(ord.id, false, r.reason);
+        // Revert local
+        var orders2 = lsGet('orders') || [];
+        if (Array.isArray(orders2)) {
+          for (var j=0; j<orders2.length; j++) {
+            if (orders2[j].id === ord.id) {
+              orders2[j].notified = false;
+              orders2[j].notifyAttempts = (orders2[j].notifyAttempts||0) + 1;
+              break;
+            }
+          }
+          lsSet('orders', orders2);
+        }
+        delete _notifyInFlight[ord.id];
+        processNotificationQueue(queue);
+      }
+    });
+  });
+}
+
+// Format fallback text if ord.text was not stored
+function formatOrderForTelegram(ord) {
+  var s = '🛒 ออเดอร์ใหม่ — ' + (ord.branchName||'') + '\n';
+  s += 'Lot #' + (ord.lotNo||'') + '\n';
+  s += '📅 วันสั่ง: ' + (ord.orderDate||'') + '\n';
+  s += '📦 วันส่ง: ' + (ord.deliveryDate||'') + '\n';
+  s += '🥐 จำนวน: ' + (ord.total||0).toLocaleString() + ' ชิ้น\n';
+  s += '💰 ยอด: ' + (ord.price||0).toLocaleString() + ' บาท';
+  return s;
+}
+
+// Start polling when admin enters dashboard
+var _dispatchInterval = null;
+function startAdminNotificationLoop() {
+  if (_dispatchInterval) return; // already running
+  // Run immediately + every 30 seconds while admin is active
+  dispatchPendingNotifications();
+  _dispatchInterval = setInterval(dispatchPendingNotifications, 30000);
+  console.log('[Notify] Admin dispatcher started (poll every 30s)');
+}
+
+function stopAdminNotificationLoop() {
+  if (_dispatchInterval) {
+    clearInterval(_dispatchInterval);
+    _dispatchInterval = null;
+    console.log('[Notify] Admin dispatcher stopped');
+  }
+}
+
+// Update admin dashboard notification status card
+function updateNotifyStatusCard() {
+  var card = document.getElementById('notify-status-card');
+  var titleEl = document.getElementById('notify-status-title');
+  var detailEl = document.getElementById('notify-status-detail');
+  if (!card || !titleEl || !detailEl) return;
+  card.style.display = 'block';
+
+  var cfg = lsGet('settings') || {};
+  if (!cfg.tgBotToken || !cfg.tgChatId) {
+    titleEl.innerHTML = '⚠️ Notification Dispatcher — ไม่ได้ตั้งค่า';
+    titleEl.style.color = '#c00';
+    detailEl.textContent = 'กรุณาตั้งค่า Telegram Bot ที่ Settings → Telegram เพื่อรับการแจ้งเตือนออเดอร์';
+    return;
+  }
+
+  var orders = lsGet('orders') || [];
+  if (!Array.isArray(orders)) orders = [];
+  var now = Date.now();
+  var maxAge = 7 * 24 * 60 * 60 * 1000;
+  var pending = orders.filter(function(o){
+    if (!o || !o.id || o.notified === true || o.notified === undefined) return false;
+    var orderTs = parseInt(String(o.id||'o0').slice(1), 10) || 0;
+    return (now - orderTs) <= maxAge;
+  });
+
+  if (pending.length === 0) {
+    titleEl.innerHTML = '✅ Notification Dispatcher — ทำงาน';
+    titleEl.style.color = 'var(--brown-dark)';
+    detailEl.textContent = 'ไม่มีออเดอร์ค้างแจ้งเตือน · poll ทุก 30 วินาที';
+  } else {
+    titleEl.innerHTML = '🔔 มีออเดอร์รอแจ้งเตือน ' + pending.length + ' รายการ';
+    titleEl.style.color = '#c00';
+    detailEl.textContent = 'จะส่ง Telegram อัตโนมัติภายใน 30 วินาที — หรือกดปุ่ม "ส่งเดี๋ยวนี้" เพื่อส่งทันที';
+  }
+}
+
+// Manual trigger from admin dashboard
+function manualDispatchNotifications() {
+  var detailEl = document.getElementById('notify-status-detail');
+  if (detailEl) detailEl.textContent = '⏳ กำลังส่งแจ้งเตือน...';
+  dispatchPendingNotifications();
+  setTimeout(function(){
+    updateNotifyStatusCard();
+  }, 3000);
 }
 
 // Track orders that failed to sync — retry on next app load
@@ -2529,6 +2738,10 @@ function pullOrdersFromFirebase() {
     merged.sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
     lsSet('orders', merged);
     console.log('[FB] Pulled orders:', merged.length);
+    // v3.4.0: After pulling, immediately try to dispatch notifications (admin only)
+    if (APP.adminIn) {
+      setTimeout(dispatchPendingNotifications, 500);
+    }
   }).catch(function(e){ console.warn('[FB] Pull orders failed:', e); });
 }
 
@@ -2541,9 +2754,15 @@ function doLoginAdmin() {
   if (pw===(cfg.adminPassword||'admin1234')) {
     APP.adminIn=true; document.getElementById('adm-pw').value='';
     loadAdminDash(); goPage('page-admin');
+    // v3.4.0: Start admin-side notification dispatcher
+    startAdminNotificationLoop();
   } else { showErr('al-error','รหัสผ่านไม่ถูกต้อง'); }
 }
-function doLogoutAdmin() { APP.adminIn=false; goPage('page-landing'); }
+function doLogoutAdmin() {
+  APP.adminIn=false;
+  stopAdminNotificationLoop();
+  goPage('page-landing');
+}
 
 function loadAdminDash() {
   // Show version in admin
@@ -2564,6 +2783,9 @@ function loadAdminDash() {
   document.getElementById('adm-stat-pieces').textContent=totalPcs.toLocaleString();
   document.getElementById('adm-stat-revenue').textContent=revenue.toLocaleString();
   document.getElementById('adm-stat-pending').textContent=pending;
+
+  // v3.4.0: Show notification dispatcher status
+  updateNotifyStatusCard();
   // Sync indicator
   var sb = document.getElementById('adm-sync-badge');
   if (sb) {
