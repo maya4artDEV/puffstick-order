@@ -451,20 +451,9 @@ textarea.form-input{resize:none;line-height:1.5}
       <div class="order-text" id="prev-text"></div>
       <button class="btn btn-ghost mt-10" style="font-size:13px;" onclick="doCopy()">📋 คัดลอกข้อความ</button>
     </div>
-    <div class="card">
-      <div class="card-title">📬 ส่งออเดอร์</div>
-      <div class="alert alert-info text-sm mb-10">
-        ✈️ <strong>Telegram จะส่งอัตโนมัติ</strong>เมื่อกด "ยืนยันและบันทึกออเดอร์" — ไม่ต้องไปแชร์ในไลน์ซ้ำ<br>
-        🟢 ปุ่มแชร์ LINE ด้านล่างสำหรับกรณีต้องการ forward เพิ่มเติม
-      </div>
-      <button class="btn btn-line mb-8" onclick="doShareLine()">
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="white"><path d="M19.952 10.557C19.952 6.353 15.766 2.95 10.635 2.95 5.504 2.95 1.317 6.353 1.317 10.557c0 3.784 3.354 6.947 7.882 7.544.307.066.724.203.83.465.094.238.062.61.03.85l-.134.804c-.04.238-.19.934.82.509 1.009-.425 5.46-3.215 7.449-5.51 1.372-1.506 2.028-3.03 2.028-4.662"/></svg>
-        แชร์ผ่าน LINE (ทางเลือก)
-      </button>
-      <div id="tg-btn-wrap" style="display:none;margin-bottom:8px;">
-        <button class="btn btn-ghost btn-sm" style="font-size:12px;" onclick="doSendTelegram()">🔄 ส่ง Telegram ทันที (ทดสอบ)</button>
-      </div>
-      <div id="send-status" style="display:none;"></div>
+    <div class="alert alert-info text-sm mb-10">
+      ✈️ <strong>ผู้ประสานงานจะได้รับแจ้งเตือนอัตโนมัติ</strong> เมื่อกด "ยืนยันและบันทึกออเดอร์"<br>
+      📲 หากต้องการแชร์ไปยัง LINE — ทำได้หลังกดยืนยันแล้ว
     </div>
     <button class="btn btn-success" onclick="doConfirmOrder()">✅ ยืนยันและบันทึกออเดอร์</button>
     <button class="btn btn-ghost mt-10" onclick="goPage('page-order')">← แก้ไขออเดอร์</button>
@@ -506,10 +495,10 @@ textarea.form-input{resize:none;line-height:1.5}
     <div style="font-size:15px;color:var(--gray);margin-bottom:6px;" id="suc-lot"></div>
     <div style="font-size:13px;color:var(--gray);margin-bottom:16px;" id="suc-detail"></div>
 
-    <!-- Confirmation banner — addresses "did Tony get my order?" anxiety -->
+    <!-- Confirmation banner — v3.4.0 wording (admin-side dispatcher) -->
     <div style="background:linear-gradient(135deg,#E8F5E9,#C8E6C9);border:2px solid #4CAF50;border-radius:12px;padding:14px 16px;margin-bottom:16px;width:100%;max-width:340px;">
-      <div style="font-size:15px;font-weight:700;color:#2E7D32;margin-bottom:6px;">✅ ผู้ประสานงานได้รับออเดอร์แล้ว</div>
-      <div style="font-size:12.5px;color:#555;line-height:1.5;">ระบบส่งใบส่งของไปทาง Telegram ของผู้ประสานงานเรียบร้อย<br>คุณสามารถดาวน์โหลดสำเนาด้านล่าง</div>
+      <div style="font-size:15px;font-weight:700;color:#2E7D32;margin-bottom:6px;">✅ ออเดอร์ส่งถึงระบบแล้ว</div>
+      <div style="font-size:12.5px;color:#555;line-height:1.5;">ผู้ประสานงานจะได้รับการแจ้งเตือนเข้า Telegram ภายในไม่กี่วินาที<br>คุณสามารถดาวน์โหลดสำเนาด้านล่างได้เลย</div>
     </div>
 
     <div id="suc-fb-status" class="alert" style="display:none;width:100%;max-width:340px;margin-bottom:10px;text-align:left;"></div>
@@ -517,6 +506,10 @@ textarea.form-input{resize:none;line-height:1.5}
     <div id="suc-disc" class="disc-banner" style="display:none;width:100%;margin-bottom:20px;max-width:320px;">🌟 ยอดสะสมผ่าน 4,500 ชิ้นแล้ว!<br>ลอตถัดไปได้ส่วนลด 10%</div>
 
     <button class="btn btn-primary" style="max-width:280px;" onclick="downloadInvoice()">📄 ดาวน์โหลดใบส่งของ</button>
+    <button class="btn btn-line mt-10" style="max-width:280px;" onclick="doShareLine()">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="white" style="vertical-align:middle;margin-right:6px;"><path d="M19.952 10.557C19.952 6.353 15.766 2.95 10.635 2.95 5.504 2.95 1.317 6.353 1.317 10.557c0 3.784 3.354 6.947 7.882 7.544.307.066.724.203.83.465.094.238.062.61.03.85l-.134.804c-.04.238-.19.934.82.509 1.009-.425 5.46-3.215 7.449-5.51 1.372-1.506 2.028-3.03 2.028-4.662"/></svg>
+      แชร์ผ่าน LINE (ทางเลือก)
+    </button>
     <button class="btn btn-outline mt-10" style="max-width:280px;" onclick="doNewOrder()">🛒 สั่งออเดอร์ใหม่</button>
     <button class="btn btn-ghost mt-10" style="max-width:280px;" onclick="confirmLogout()">ออกจากระบบ</button>
   </div>
@@ -851,8 +844,8 @@ var FILLINGS = [
   {id:'choc',   name:'ช็อกโกแลต',      emoji:'🍫'}
 ];
 
-var APP_VERSION = '3.4.0';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
-var APP_BUILD   = '2026.06.14-arch';  // วันที่ deploy
+var APP_VERSION = '3.4.1';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
+var APP_BUILD   = '2026.06.16';  // วันที่ deploy
 
 var PRICE_PER_PC = 20;
 var DISC_THRESH  = 4500;
