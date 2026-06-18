@@ -551,14 +551,27 @@ textarea.form-input{resize:none;line-height:1.5}
         <div>
           <div style="font-weight:700;font-size:13px;color:var(--brown-dark);" id="notify-status-title">🔔 Notification Dispatcher</div>
           <div style="font-size:12px;color:var(--gray);margin-top:2px;" id="notify-status-detail"></div>
+          <div style="font-size:11px;color:var(--gray);margin-top:2px;" id="notify-last-update"></div>
         </div>
-        <button class="btn btn-outline btn-sm" onclick="manualDispatchNotifications()" style="font-size:12px;padding:6px 12px;">🔁 ส่งแจ้งเตือนเดี๋ยวนี้</button>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+          <button class="btn btn-outline btn-sm" onclick="manualPullAndDispatch()" style="font-size:12px;padding:6px 12px;">🔄 รีเฟรชจาก cloud</button>
+          <button class="btn btn-outline btn-sm" onclick="manualDispatchNotifications()" style="font-size:12px;padding:6px 12px;">🔁 ส่งแจ้งเตือนเดี๋ยวนี้</button>
+        </div>
       </div>
       <div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--border);display:flex;gap:6px;flex-wrap:wrap;">
         <button class="btn btn-ghost btn-sm" onclick="recoverBacklogNotifications(24)" style="font-size:11px;padding:5px 10px;flex:1;min-width:130px;">🔍 ตรวจย้อน 24 ชม.</button>
         <button class="btn btn-ghost btn-sm" onclick="recoverBacklogNotifications(48)" style="font-size:11px;padding:5px 10px;flex:1;min-width:130px;">🔍 ตรวจย้อน 48 ชม.</button>
         <button class="btn btn-ghost btn-sm" onclick="recoverBacklogNotifications(168)" style="font-size:11px;padding:5px 10px;flex:1;min-width:130px;">🔍 ตรวจย้อน 7 วัน</button>
       </div>
+    </div>
+
+    <!-- v3.4.3: Branch Health monitoring -->
+    <div id="branch-health-card" class="card" style="margin-bottom:12px;padding:10px 14px;display:none;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+        <div style="font-weight:700;font-size:13px;color:var(--brown-dark);">🩺 สุขภาพเครื่องสาขา (Branch Health)</div>
+        <button class="btn btn-outline btn-sm" onclick="loadBranchHealth()" style="font-size:11px;padding:5px 10px;">🔄 รีเฟรช</button>
+      </div>
+      <div id="branch-health-content" style="margin-top:8px;font-size:12px;"></div>
     </div>
     <div class="menu-row" onclick="openAdminTab('branches')"><div class="menu-row-text"><div class="title">🏪 จัดการสาขา</div><div class="sub">เพิ่ม/แก้ไขสาขา, PIN, เลข Lot</div></div><span class="chevron">›</span></div>
     <div class="menu-row" onclick="openAdminTab('history')"><div class="menu-row-text"><div class="title">📋 ประวัติออเดอร์</div><div class="sub">ดูออเดอร์, อัปเดตสถานะ, export CSV</div></div><span class="chevron">›</span></div>
@@ -844,8 +857,8 @@ var FILLINGS = [
   {id:'choc',   name:'ช็อกโกแลต',      emoji:'🍫'}
 ];
 
-var APP_VERSION = '3.4.1';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
-var APP_BUILD   = '2026.06.16';  // วันที่ deploy
+var APP_VERSION = '3.4.5';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
+var APP_BUILD   = '2026.06.18-safety';  // วันที่ deploy
 
 var PRICE_PER_PC = 20;
 var DISC_THRESH  = 4500;
@@ -914,12 +927,144 @@ var APP = {branch:null, order:null, adminIn:false, payStatus:'pending', viewOrdI
 // LS
 // ============================================================
 function lsGet(k) { try { return JSON.parse(localStorage.getItem('ps_'+k)); } catch(e) { return null; } }
-function lsSet(k,v) { try { localStorage.setItem('ps_'+k, JSON.stringify(v)); } catch(e) {} }
+function lsSet(k,v) {
+  try {
+    localStorage.setItem('ps_'+k, JSON.stringify(v));
+    return true;
+  } catch(e) {
+    console.error('[lsSet] FAILED:', k, e.name, e.message);
+    // If quota exceeded, try cleanup then retry
+    if (e.name === 'QuotaExceededError' || e.code === 22) {
+      attemptStorageCleanup();
+      try {
+        localStorage.setItem('ps_'+k, JSON.stringify(v));
+        console.log('[lsSet] Recovered after cleanup:', k);
+        return true;
+      } catch(e2) {
+        console.error('[lsSet] Retry also failed:', k, e2.message);
+        // Last resort: report to Firebase health log
+        reportStorageFailure(k, e2.message);
+      }
+    }
+    return false;
+  }
+}
+
+// Estimate localStorage usage in KB
+function estimateStorageSize() {
+  var total = 0;
+  try {
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      var v = localStorage.getItem(k) || '';
+      total += (k.length + v.length) * 2;  // UTF-16 = 2 bytes/char approx
+    }
+  } catch(e) {}
+  return Math.round(total / 1024);
+}
+
+// Trim old orders to free localStorage space (keep newest 150)
+function attemptStorageCleanup() {
+  console.warn('[Cleanup] Starting storage cleanup...');
+  var sizeBefore = estimateStorageSize();
+  var orders = lsGet('orders') || [];
+  if (Array.isArray(orders) && orders.length > 100) {
+    // Sort by order timestamp (id encodes Date.now())
+    orders.sort(function(a, b) {
+      var ta = parseInt(String(a.id||'o0').slice(1), 10) || 0;
+      var tb = parseInt(String(b.id||'o0').slice(1), 10) || 0;
+      return tb - ta;  // newest first
+    });
+    var trimmed = orders.slice(0, 150);
+    try {
+      localStorage.setItem('ps_orders', JSON.stringify(trimmed));
+      console.log('[Cleanup] Orders trimmed:', orders.length, '→', trimmed.length);
+    } catch(e) {
+      // Even trim failed — try smaller
+      try {
+        localStorage.setItem('ps_orders', JSON.stringify(orders.slice(0, 50)));
+        console.log('[Cleanup] Orders aggressively trimmed to 50');
+      } catch(e2) {
+        console.error('[Cleanup] Cannot save even trimmed orders');
+      }
+    }
+  }
+  // Also clean unsynced flags older than 30 days
+  var pending = lsGet('unsynced_orders') || {};
+  var cutoff = Date.now() - 30*24*60*60*1000;
+  var cleaned = {};
+  Object.keys(pending).forEach(function(id){
+    if (pending[id] && pending[id].ts > cutoff) cleaned[id] = pending[id];
+  });
+  try { localStorage.setItem('ps_unsynced_orders', JSON.stringify(cleaned)); } catch(e){}
+  var sizeAfter = estimateStorageSize();
+  console.log('[Cleanup] Storage:', sizeBefore, 'KB →', sizeAfter, 'KB');
+}
+
+// Report storage failure to Firebase for Tony to see
+function reportStorageFailure(key, errMsg) {
+  var ep = fbEndpoint('branch_health/storage_failures');
+  if (!ep) return;
+  var did = (typeof getOrCreateDeviceId === 'function') ? getOrCreateDeviceId() : 'unknown';
+  var branchId = (APP && APP.branch) ? APP.branch.id : 'no-branch';
+  var entry = {
+    ts: Date.now(),
+    deviceId: did,
+    branchId: branchId,
+    key: key,
+    error: errMsg,
+    storageSize: estimateStorageSize(),
+    appVersion: APP_VERSION
+  };
+  fetch(ep, {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(entry)
+  }).catch(function(){});
+}
 
 // ============================================================
 // INIT
 // ============================================================
 function initApp() {
+  // v3.4.5: Global error handler — report ALL uncaught crashes to Firebase
+  // Without this, bugs like v3.4.1's tg-btn-wrap crash are invisible to Tony
+  window.onerror = function(msg, src, line, col, err) {
+    var info = {
+      type: 'uncaught',
+      message: String(msg || '').slice(0, 300),
+      source: String(src || '').split('/').pop().slice(0, 80),
+      line: line || 0,
+      column: col || 0,
+      stack: (err && err.stack) ? String(err.stack).slice(0, 500) : '',
+      ts: Date.now(),
+      version: APP_VERSION,
+      build: APP_BUILD,
+      page: (function(){ var p = document.querySelector('.page.active'); return p ? p.id : 'unknown'; })(),
+      branchId: (typeof APP !== 'undefined' && APP.branch) ? APP.branch.id : null,
+      branchName: (typeof APP !== 'undefined' && APP.branch) ? APP.branch.name : null,
+      deviceId: (function(){ try { return getOrCreateDeviceId(); } catch(e){ return 'unknown'; } })(),
+      userAgent: navigator.userAgent.slice(0, 100)
+    };
+    console.error('[GlobalError]', info);
+    try {
+      var ep = fbEndpoint('branch_health/errors');
+      if (ep) {
+        fetch(ep, {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify(info)
+        }).catch(function(){});
+      }
+    } catch(e) {}
+    return false; // let browser also log
+  };
+  window.onunhandledrejection = function(event) {
+    var reason = event && event.reason;
+    var msg = (reason && reason.message) ? reason.message : String(reason);
+    window.onerror.call(null, 'Unhandled promise: ' + msg, '', 0, 0, reason);
+  };
+
   // Show version everywhere
   var ftEl = document.getElementById('land-footer');
   if (ftEl) ftEl.textContent = 'PUFFSTICK ORDER SYSTEM · v' + APP_VERSION + ' · ' + APP_BUILD;
@@ -979,6 +1124,39 @@ function initApp() {
   setTimeout(checkVersionFromFirebase, 1500);
   // Retry any orders that failed to sync previously
   setTimeout(retryUnsyncedOrders, 2500);
+  // v3.4.3: Send health ping (every 5 min while app open) so Tony sees who's alive
+  setTimeout(pushBranchHealthPing, 3500);
+  _healthInterval = setInterval(pushBranchHealthPing, 5*60*1000);  // every 5 minutes
+}
+
+// v3.4.3: Branch health telemetry — Tony sees every device status proactively
+var _healthInterval = null;
+function pushBranchHealthPing() {
+  var ep = fbEndpoint('branch_health/pings');
+  if (!ep) return;
+  var did = (typeof getOrCreateDeviceId === 'function') ? getOrCreateDeviceId() : ('d'+Date.now());
+  var unsyncedCount = Object.keys(lsGet('unsynced_orders') || {}).length;
+  var entry = {
+    ts: Date.now(),
+    deviceId: did,
+    branchId: (APP && APP.branch) ? APP.branch.id : null,
+    branchName: (APP && APP.branch) ? APP.branch.name : null,
+    appVersion: APP_VERSION,
+    build: APP_BUILD,
+    storageSizeKb: estimateStorageSize(),
+    unsyncedOrders: unsyncedCount,
+    userAgent: navigator.userAgent.slice(0, 100),
+    page: (document.querySelector('.page.active') ? document.querySelector('.page.active').id : 'unknown'),
+    online: navigator.onLine
+  };
+  // Use deviceId as key so each device has 1 entry (last-known state)
+  var pingEp = fbEndpoint('branch_health/pings/'+did);
+  if (!pingEp) return;
+  fetch(pingEp, {
+    method:'PUT',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify(entry)
+  }).catch(function(){});
 }
 
 function setLandingDate() {
@@ -2051,16 +2229,22 @@ function selModalPay(status) {
 // PREVIEW
 // ============================================================
 function doPreview() {
-  var total = calcTotal();
-  if (total === 0) { alert('กรุณากรอกจำนวนขนมอย่างน้อย 1 ชิ้น'); return; }
-  if (!document.getElementById('del-date').value) { alert('กรุณาเลือกวันที่รับขนม'); return; }
-  buildOrderText();
-  var cfg = lsGet('settings')||{};
-  document.getElementById('tg-btn-wrap').style.display = (cfg.tgBotToken&&cfg.tgChatId) ? 'block' : 'none';
-  document.getElementById('send-status').style.display = 'none';
-  var ba=computeMonthlyAccum(APP.branch.id);
-  document.getElementById('preview-disc-banner').style.display=ba.discountAvailable?'block':'none';
-  goPage('page-preview');
+  try {
+    var total = calcTotal();
+    if (total === 0) { alert('กรุณากรอกจำนวนขนมอย่างน้อย 1 ชิ้น'); return; }
+    var delDateEl = document.getElementById('del-date');
+    if (!delDateEl || !delDateEl.value) { alert('กรุณาเลือกวันที่รับขนม'); return; }
+    buildOrderText();
+    var ba=computeMonthlyAccum(APP.branch.id);
+    var discBanner = document.getElementById('preview-disc-banner');
+    if (discBanner) discBanner.style.display=ba.discountAvailable?'block':'none';
+    goPage('page-preview');
+  } catch(e) {
+    console.error('[doPreview] Error:', e);
+    alert('⚠️ เกิดข้อผิดพลาดในการแสดงตัวอย่างออเดอร์\n\nรายละเอียด: '+(e.message||e)+'\n\nกรุณาแจ้งผู้ประสานงาน');
+    // Will also be auto-reported via window.onerror
+    throw e;
+  }
 }
 
 function buildOrderText() {
@@ -2179,14 +2363,21 @@ function doShareLine() {
 }
 
 function doSendTelegram() {
+  // v3.4.4: Function kept for backward-compat (in case old cached HTML still calls it)
+  // but UI elements removed in v3.4.1. Guard against null.
   var cfg=lsGet('settings')||{};
   if (!cfg.tgBotToken||!cfg.tgChatId) { alert('กรุณาตั้งค่า Telegram ก่อน'); return; }
-  var txt=document.getElementById('prev-text').textContent;
+  var prevText=document.getElementById('prev-text');
+  var txt = prevText ? prevText.textContent : '';
   var stEl=document.getElementById('send-status');
-  stEl.style.display='block'; stEl.className='alert alert-info'; stEl.textContent='⏳ กำลังส่ง...';
+  if (stEl) { stEl.style.display='block'; stEl.className='alert alert-info'; stEl.textContent='⏳ กำลังส่ง...'; }
   sendTelegramRaw(txt, function(result) {
-    if (result.sent) { stEl.className='alert alert-success'; stEl.textContent='✅ ส่ง Telegram สำเร็จ!'; }
-    else { stEl.className='alert alert-danger'; stEl.textContent='❌ '+result.reason; }
+    if (stEl) {
+      if (result.sent) { stEl.className='alert alert-success'; stEl.textContent='✅ ส่ง Telegram สำเร็จ!'; }
+      else { stEl.className='alert alert-danger'; stEl.textContent='❌ '+result.reason; }
+    } else {
+      alert(result.sent ? '✅ ส่ง Telegram สำเร็จ!' : '❌ '+result.reason);
+    }
   });
 }
 
@@ -2232,7 +2423,15 @@ function doConfirmOrder() {
 
   // Detect if THIS order causes the branch to cross threshold (for celebration popup)
   var baBefore = computeMonthlyAccum(ord.branchId);
-  var orders=lsGet('orders')||[]; orders.unshift(ord); lsSet('orders', orders);
+  var orders=lsGet('orders')||[]; orders.unshift(ord);
+  // v3.4.3: VERIFY save succeeded — if not, alert branch + don't proceed
+  var saveOk = lsSet('orders', orders);
+  if (!saveOk) {
+    alert('⚠️ ไม่สามารถบันทึกข้อมูลในเครื่องได้\n\nหน่วยความจำของเครื่องอาจเต็ม กรุณา:\n1) ปิดและเปิด app ใหม่\n2) หากยังไม่ได้ — แจ้งผู้ประสานงาน');
+    // Push order to Firebase anyway as best-effort recovery
+    syncOrderToFirebase(ord);
+    return;
+  }
   var baAfter = computeMonthlyAccum(ord.branchId);
   var newReach = (!baBefore.discountAvailable && baAfter.discountAvailable);
 
@@ -2252,13 +2451,19 @@ function doConfirmOrder() {
     fbStatusEl.innerHTML = '⏳ กำลังส่งออเดอร์ไประบบ...';
   }
   syncOrderToFirebase(ord).then(function(res){
-    if (!fbStatusEl) return;
+    if (fbStatusEl) {
+      if (res.ok) {
+        fbStatusEl.className = 'alert alert-success';
+        fbStatusEl.innerHTML = '✅ ออเดอร์ส่งถึงระบบสำเร็จ — ผู้ประสานงานจะได้รับการแจ้งเตือน';
+      } else {
+        fbStatusEl.className = 'alert alert-danger';
+        fbStatusEl.innerHTML = '⚠️ ยังส่งไม่สำเร็จ ('+res.reason+') — ออเดอร์อยู่ในเครื่องและจะส่งให้เองเมื่อเชื่อมอินเทอร์เน็ตอีกครั้ง';
+      }
+    }
+    // v3.4.2: Best-effort Telegram from branch device (instant notification path)
+    // If branch's credentials work → instant. If not → admin failsafe picks up.
     if (res.ok) {
-      fbStatusEl.className = 'alert alert-success';
-      fbStatusEl.innerHTML = '✅ ออเดอร์ส่งถึงระบบสำเร็จ — ผู้ประสานงานจะได้รับการแจ้งเตือน';
-    } else {
-      fbStatusEl.className = 'alert alert-danger';
-      fbStatusEl.innerHTML = '⚠️ ยังส่งไม่สำเร็จ ('+res.reason+') — ออเดอร์อยู่ในเครื่องและจะส่งให้เองเมื่อเชื่อมอินเทอร์เน็ตอีกครั้ง';
+      setTimeout(function(){ attemptBranchTelegramNotify(ord); }, 200);
     }
   });
 
@@ -2266,12 +2471,50 @@ function doConfirmOrder() {
   document.getElementById('suc-detail').textContent='กำหนดส่ง '+ord.deliveryDate+' · '+ord.price.toLocaleString()+' บาท';
   document.getElementById('suc-disc').style.display=newReach?'block':'none';
 
-  // v3.4.0: Removed Telegram from branch flow — admin handles notification
-  // (Hide old Telegram status element if still in DOM)
+  // v3.4.0: Removed Telegram status UI from branch — admin failsafe handles errors silently
   var tgStatusEl = document.getElementById('suc-tg-status');
   if (tgStatusEl) tgStatusEl.style.display = 'none';
 
   goPage('page-success');
+}
+
+// v3.4.2: Branch attempts to send Telegram itself (best-effort)
+// If it works → instant notification. If not → silently leave for admin dispatcher.
+// No error UI to branch — they don't need to know if this fails.
+function attemptBranchTelegramNotify(ord) {
+  var cfg = lsGet('settings') || {};
+  if (!cfg.tgBotToken || !cfg.tgChatId) {
+    console.log('[Notify] Branch has no Telegram config — admin failsafe will handle');
+    return;
+  }
+  // Don't re-notify if already marked
+  if (ord.notified === true) return;
+
+  sendTelegramRaw(ord.text || formatOrderForTelegram(ord), function(r) {
+    if (!r.sent) {
+      console.warn('[Notify] Branch Telegram failed (admin failsafe will retry):', r.reason);
+      return;
+    }
+    // Text sent — try invoice image
+    sendInvoiceToTelegram(ord, function(ok, info){
+      // Mark notified=true in Firebase so admin dispatcher skips it
+      patchOrderNotified(ord.id, true, null);
+      // Update local
+      var orders = lsGet('orders') || [];
+      if (Array.isArray(orders)) {
+        for (var i=0; i<orders.length; i++) {
+          if (orders[i].id === ord.id) {
+            orders[i].notified = true;
+            orders[i].notifiedAt = Date.now();
+            orders[i].notifiedBy = getOrCreateDeviceId();
+            break;
+          }
+        }
+        lsSet('orders', orders);
+      }
+      console.log('[Notify] Branch sent Telegram directly:', ord.id, '(image:', (ok?'ok':'fail'), ')');
+    });
+  });
 }
 
 function doNewOrder() {
@@ -2523,10 +2766,14 @@ function formatOrderForTelegram(ord) {
 var _dispatchInterval = null;
 function startAdminNotificationLoop() {
   if (_dispatchInterval) return; // already running
-  // Run immediately + every 30 seconds while admin is active
-  dispatchPendingNotifications();
-  _dispatchInterval = setInterval(dispatchPendingNotifications, 30000);
-  console.log('[Notify] Admin dispatcher started (poll every 30s)');
+  // v3.4.3: Polling now PULLS fresh orders from Firebase first
+  //   → pullOrdersFromFirebase internally re-renders dashboard + triggers dispatch
+  //   → admin always sees latest state without manual refresh
+  pullOrdersFromFirebase();
+  _dispatchInterval = setInterval(function(){
+    pullOrdersFromFirebase();
+  }, 30000);
+  console.log('[Notify] Admin loop started — pull+dispatch every 30s');
 }
 
 function stopAdminNotificationLoop() {
@@ -2542,6 +2789,7 @@ function updateNotifyStatusCard() {
   var card = document.getElementById('notify-status-card');
   var titleEl = document.getElementById('notify-status-title');
   var detailEl = document.getElementById('notify-status-detail');
+  var lastEl = document.getElementById('notify-last-update');
   if (!card || !titleEl || !detailEl) return;
   card.style.display = 'block';
 
@@ -2550,6 +2798,7 @@ function updateNotifyStatusCard() {
     titleEl.innerHTML = '⚠️ Notification Dispatcher — ไม่ได้ตั้งค่า';
     titleEl.style.color = '#c00';
     detailEl.textContent = 'กรุณาตั้งค่า Telegram Bot ที่ Settings → Telegram เพื่อรับการแจ้งเตือนออเดอร์';
+    if (lastEl) lastEl.textContent = '';
     return;
   }
 
@@ -2572,6 +2821,18 @@ function updateNotifyStatusCard() {
     titleEl.style.color = '#c00';
     detailEl.textContent = 'จะส่ง Telegram อัตโนมัติภายใน 30 วินาที — หรือกดปุ่ม "ส่งเดี๋ยวนี้" เพื่อส่งทันที';
   }
+
+  // v3.4.3: Show last-pull time so Tony knows data freshness
+  if (lastEl) {
+    var lastPull = lsGet('orders_last_pull') || 0;
+    if (lastPull > 0) {
+      var ago = Math.round((now - lastPull) / 1000);
+      var agoStr = ago < 60 ? ago + ' วินาที' : Math.round(ago/60) + ' นาที';
+      lastEl.textContent = '🔄 ดึงข้อมูลล่าสุดเมื่อ ' + agoStr + ' ที่แล้ว · รวม ' + orders.length + ' ออเดอร์ใน cache';
+    } else {
+      lastEl.textContent = '⏳ ยังไม่เคยดึงข้อมูล';
+    }
+  }
 }
 
 // Manual trigger from admin dashboard
@@ -2582,6 +2843,114 @@ function manualDispatchNotifications() {
   setTimeout(function(){
     updateNotifyStatusCard();
   }, 3000);
+}
+
+// v3.4.3: Manual refresh from cloud — force-pull orders + dispatch
+function manualPullAndDispatch() {
+  var detailEl = document.getElementById('notify-status-detail');
+  if (detailEl) detailEl.textContent = '⏳ กำลังดึงข้อมูลจาก cloud...';
+  pullOrdersFromFirebase();
+  setTimeout(function(){
+    updateNotifyStatusCard();
+  }, 1500);
+}
+
+// v3.4.3: Load branch health pings from Firebase + render
+function loadBranchHealth() {
+  var card = document.getElementById('branch-health-card');
+  var content = document.getElementById('branch-health-content');
+  if (!card || !content) return;
+  card.style.display = 'block';
+  content.innerHTML = '⏳ กำลังโหลด...';
+  var ep = fbEndpoint('branch_health/pings');
+  if (!ep) { content.innerHTML = '⚠️ ไม่ได้ตั้งค่า Firebase'; return; }
+  fetch(ep, {cache:'no-store'}).then(function(r){ return r.ok ? r.json() : null; }).then(function(data){
+    if (!data) { content.innerHTML = '✅ ยังไม่มีข้อมูล ping จากเครื่องสาขา'; return; }
+    var pings = Object.values(data).filter(function(p){ return p && p.ts; });
+    if (pings.length === 0) { content.innerHTML = 'ยังไม่มีข้อมูล'; return; }
+    // Sort by branch then by ts desc
+    pings.sort(function(a,b){
+      var ba = (a.branchName||a.branchId||'zzz');
+      var bb = (b.branchName||b.branchId||'zzz');
+      if (ba !== bb) return ba.localeCompare(bb);
+      return (b.ts||0) - (a.ts||0);
+    });
+    // Group: keep latest ping per device
+    var seenDevices = {};
+    var latestPings = [];
+    pings.forEach(function(p){
+      var key = p.deviceId || ('na-'+p.ts);
+      if (!seenDevices[key]) { seenDevices[key] = true; latestPings.push(p); }
+    });
+    var now = Date.now();
+    var html = '<div style="display:flex;flex-direction:column;gap:6px;max-height:300px;overflow-y:auto;">';
+    latestPings.forEach(function(p){
+      var ageMs = now - (p.ts || 0);
+      var ageStr = ageMs < 60*1000 ? Math.round(ageMs/1000)+'วิ' :
+                   ageMs < 60*60*1000 ? Math.round(ageMs/60000)+'นาที' :
+                   ageMs < 24*60*60*1000 ? Math.round(ageMs/3600000)+'ชม.' :
+                   Math.round(ageMs/86400000)+'วัน';
+      var healthColor = ageMs < 10*60*1000 ? '#1B8A3A' :
+                        ageMs < 60*60*1000 ? '#D88500' : '#C0392B';
+      var healthIcon = ageMs < 10*60*1000 ? '🟢' :
+                       ageMs < 60*60*1000 ? '🟡' : '🔴';
+      var branchLabel = p.branchName || p.branchId || '(ไม่ได้ login)';
+      var warnings = [];
+      if (p.unsyncedOrders > 0) warnings.push('⚠️ orders ค้าง '+p.unsyncedOrders);
+      if (p.storageSizeKb > 4000) warnings.push('⚠️ storage ใกล้เต็ม '+p.storageSizeKb+'KB');
+      if (p.appVersion !== APP_VERSION) warnings.push('⚠️ version '+p.appVersion+' (ปัจจุบัน '+APP_VERSION+')');
+      html += '<div style="padding:8px 10px;border-radius:8px;background:#F8F5EF;border-left:3px solid '+healthColor+';">';
+      html += '<div style="font-weight:600;font-size:12px;color:'+healthColor+';">'+healthIcon+' '+branchLabel+' · '+ageStr+'ที่แล้ว</div>';
+      html += '<div style="font-size:11px;color:var(--gray);margin-top:2px;">v'+(p.appVersion||'?')+' · '+(p.storageSizeKb||0)+'KB · '+(p.online?'online':'offline')+'</div>';
+      if (warnings.length > 0) {
+        html += '<div style="font-size:11px;color:#C0392B;margin-top:3px;">'+warnings.join(' · ')+'</div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+    html += '<div style="font-size:10px;color:var(--gray);margin-top:6px;">🟢 < 10 นาที · 🟡 < 1 ชั่วโมง · 🔴 เก่ากว่า 1 ชั่วโมง</div>';
+    content.innerHTML = html;
+    // v3.4.5: Also load recent errors
+    loadRecentErrors();
+  }).catch(function(e){
+    content.innerHTML = '⚠️ โหลดล้มเหลว: '+e.message;
+  });
+}
+
+// v3.4.5: Show recent JS crashes/errors from all devices
+function loadRecentErrors() {
+  var content = document.getElementById('branch-health-content');
+  if (!content) return;
+  var ep = fbEndpoint('branch_health/errors');
+  if (!ep) return;
+  fetch(ep, {cache:'no-store'}).then(function(r){ return r.ok ? r.json() : null; }).then(function(data){
+    if (!data) return;
+    var errors = Object.values(data).filter(function(e){ return e && e.ts; });
+    if (errors.length === 0) return;
+    // Show only last 24h, max 10
+    var cutoff = Date.now() - 24*60*60*1000;
+    errors = errors.filter(function(e){ return e.ts >= cutoff; });
+    errors.sort(function(a,b){ return (b.ts||0) - (a.ts||0); });
+    errors = errors.slice(0, 10);
+    if (errors.length === 0) return;
+    var html = '<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);">';
+    html += '<div style="font-weight:700;font-size:12px;color:#C0392B;margin-bottom:6px;">🚨 JS Errors (24 ชม.) — '+errors.length+' รายการ</div>';
+    errors.forEach(function(err){
+      var ageMs = Date.now() - err.ts;
+      var ageStr = ageMs < 60*1000 ? Math.round(ageMs/1000)+'วิ' :
+                   ageMs < 60*60*1000 ? Math.round(ageMs/60000)+'นาที' :
+                   Math.round(ageMs/3600000)+'ชม.';
+      html += '<div style="padding:6px 8px;background:#FFF3F0;border-left:3px solid #C0392B;border-radius:6px;margin-bottom:4px;">';
+      html += '<div style="font-size:11px;font-weight:600;color:#C0392B;">'+(err.branchName||err.branchId||'ไม่ได้ login')+' · v'+(err.version||'?')+' · '+ageStr+'ที่แล้ว</div>';
+      html += '<div style="font-size:10.5px;color:#555;margin-top:2px;word-break:break-word;">'+(err.message||'').slice(0,150)+'</div>';
+      if (err.source && err.line) {
+        html += '<div style="font-size:10px;color:var(--gray);">📍 '+err.source+' line '+err.line+' · page: '+(err.page||'?')+'</div>';
+      }
+      html += '</div>';
+    });
+    html += '</div>';
+    content.innerHTML += html;
+  }).catch(function(){});
 }
 
 // ─── BACKLOG RECOVERY: notify orders Tony missed (pre-v3.4.0) ───
@@ -2787,24 +3156,28 @@ function showUpdateBanner(newVer) {
 
 function pullOrdersFromFirebase() {
   var ep = fbEndpoint('orders'); if (!ep) return;
-  fetch(ep).then(function(r){ return r.ok ? r.json() : null; }).then(function(data){
+  // v3.4.3: no-cache to force fresh fetch (avoid browser caching old responses)
+  fetch(ep, {cache:'no-store'}).then(function(r){ return r.ok ? r.json() : null; }).then(function(data){
     if (!data) return;
-    // data is an object keyed by orderId
     var remoteOrds = Object.values(data).filter(function(o){ return o && o.id; });
     if (!remoteOrds.length) return;
     var localOrds = lsGet('orders') || [];
     if (!Array.isArray(localOrds)) localOrds = [];
-    // Merge: build a map, remote wins for same id
+    // Merge: local first, remote wins for same id
     var map = {};
     for (var i=0; i<localOrds.length; i++) { if(localOrds[i].id) map[localOrds[i].id] = localOrds[i]; }
     for (var j=0; j<remoteOrds.length; j++) { if(remoteOrds[j].id) map[remoteOrds[j].id] = remoteOrds[j]; }
     var merged = Object.values(map);
-    // Sort by ts desc
     merged.sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
     lsSet('orders', merged);
+    lsSet('orders_last_pull', Date.now());
     console.log('[FB] Pulled orders:', merged.length);
-    // v3.4.0: After pulling, immediately try to dispatch notifications (admin only)
+    // v3.4.3: Re-render admin dashboard if currently visible (so stats update without reload)
     if (APP.adminIn) {
+      var adminPage = document.getElementById('page-admin');
+      if (adminPage && adminPage.classList.contains('active')) {
+        try { loadAdminDash(); } catch(e){ console.warn('[Admin] re-render failed', e); }
+      }
       setTimeout(dispatchPendingNotifications, 500);
     }
   }).catch(function(e){ console.warn('[FB] Pull orders failed:', e); });
@@ -2851,6 +3224,8 @@ function loadAdminDash() {
 
   // v3.4.0: Show notification dispatcher status
   updateNotifyStatusCard();
+  // v3.4.3: Show branch health
+  loadBranchHealth();
   // Sync indicator
   var sb = document.getElementById('adm-sync-badge');
   if (sb) {
@@ -3498,8 +3873,8 @@ function clearAllData() {
 // ============================================================
 // MODAL
 // ============================================================
-function openModal(id)  { document.getElementById(id).classList.add('open'); }
-function closeModal(id) { document.getElementById(id).classList.remove('open'); }
+function openModal(id)  { var e=document.getElementById(id); if (e) e.classList.add('open'); }
+function closeModal(id) { var e=document.getElementById(id); if (e) e.classList.remove('open'); }
 document.querySelectorAll('.modal-bg').forEach(function(bg){
   bg.addEventListener('click',function(e){if(e.target===bg)bg.classList.remove('open');});
 });
