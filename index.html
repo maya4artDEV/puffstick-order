@@ -841,6 +841,10 @@ textarea.form-input{resize:none;line-height:1.5}
 // ─── FIREBASE HARDCODED (ลูกค้าไม่ต้องตั้ง) ─────────────────────
 var FB_DEFAULT_URL  = 'https://puff-stick-fc-order-default-rtdb.asia-southeast1.firebasedatabase.app';
 var FB_DEFAULT_PATH = 'puffstick';
+// v3.6.0: Telegram dispatch via Cloudflare Worker proxy
+// - Token no longer in source code (lives in Worker secrets)
+// - To revoke token: update Cloudflare secret — branches need no update
+var WORKER_URL = 'https://puffstick-telegram-notifier.92foodlimited.workers.dev';
 // v3.5.0: Telegram credentials default fallback (same pattern as FB_DEFAULT_URL above)
 // - Branches inherit these automatically (no manual setup)
 // - Admin can override via Settings — overrides sync to all devices via Firebase config
@@ -1646,31 +1650,30 @@ function downloadInvoice() {
   });
 }
 
-// Send invoice to Telegram as photo (called automatically on order submit)
+// Send invoice to Telegram VIA CLOUDFLARE WORKER PROXY (v3.6.0)
+// - Branch renders PNG locally → POST to Worker as multipart
+// - Worker holds Telegram token (not in source code)
+// - Worker sends sendPhoto (PNG + caption) atomically + marks order notified
+// - If Worker fails, order stays notified=false → resend button available
 function sendInvoiceToTelegram(ord, onComplete) {
-  var cfg = lsGet('settings') || {};
-  var token = cfg.tgBotToken;
-  var chatId = cfg.tgChatId;
-  if (!token || !chatId) { if (onComplete) onComplete(false, 'no-telegram'); return; }
+  if (!WORKER_URL) { if (onComplete) onComplete(false, 'no-worker-url'); return; }
+  if (!ord || !ord.id) { if (onComplete) onComplete(false, 'no-order-id'); return; }
 
   renderInvoiceToCanvas(ord, function(err, canvas){
-    if (err) { if (onComplete) onComplete(false, err); return; }
+    if (err) { if (onComplete) onComplete(false, 'render: '+err); return; }
     canvas.toBlob(function(blob){
-      if (!blob) { if (onComplete) onComplete(false, 'blob failed'); return; }
+      if (!blob) { if (onComplete) onComplete(false, 'blob-failed'); return; }
       var formData = new FormData();
-      formData.append('chat_id', chatId);
+      formData.append('orderId', ord.id);
       formData.append('photo', blob, 'invoice.png');
-      var caption = '🛒 ออเดอร์ใหม่ — ' + (ord.branchName||'') + '\n';
-      caption += 'Lot #' + (ord.lotNo||'') + ' · ' + (ord.total||0).toLocaleString() + ' ชิ้น\n';
-      caption += '💰 ยอด: ' + (ord.price||0).toLocaleString() + ' บาท\n';
-      caption += '📅 ส่ง: ' + (ord.deliveryDate||'');
-      formData.append('caption', caption);
-      fetch('https://api.telegram.org/bot'+token+'/sendPhoto', { method:'POST', body: formData })
-        .then(function(r){ return r.json(); })
-        .then(function(data){
-          if (onComplete) onComplete(data && data.ok, data && data.description);
+      formData.append('caption', ord.text || formatOrderForTelegram(ord));
+      fetch(WORKER_URL + '/send-order', { method:'POST', body: formData })
+        .then(function(r){ return r.json().then(function(d){ return {status:r.status, data:d}; }); })
+        .then(function(res){
+          var ok = res.data && res.data.ok === true;
+          if (onComplete) onComplete(ok, ok ? null : ((res.data && res.data.error) || ('http-'+res.status)));
         })
-        .catch(function(e){ if (onComplete) onComplete(false, String(e)); });
+        .catch(function(e){ if (onComplete) onComplete(false, 'network: '+String(e).slice(0,80)); });
     }, 'image/png');
   });
 }
@@ -2413,9 +2416,9 @@ function retryTelegramFromSuccess() {
   var stEl = document.getElementById('suc-tg-status');
   stEl.className = 'alert alert-info';
   stEl.innerHTML = '⏳ กำลังส่ง Telegram...';
-  sendTelegramRaw(lastOrder.text || '', function(r) {
-    if (r.sent) { stEl.className = 'alert alert-success'; stEl.innerHTML = '✅ ส่ง Telegram สำเร็จ — แอดมินได้รับออเดอร์แล้ว'; }
-    else { stEl.className = 'alert alert-danger'; stEl.innerHTML = '⚠️ ส่งไม่สำเร็จ: ' + r.reason + ' &nbsp; <button class="btn btn-xs btn-outline" style="margin-left:6px;padding:4px 10px;" onclick="retryTelegramFromSuccess()">ลองใหม่</button>'; }
+  sendInvoiceToTelegram(lastOrder, function(ok, info) {
+    if (ok) { stEl.className = 'alert alert-success'; stEl.innerHTML = '✅ ส่ง Telegram สำเร็จ — แอดมินได้รับออเดอร์แล้ว'; }
+    else { stEl.className = 'alert alert-danger'; stEl.innerHTML = '⚠️ ส่งไม่สำเร็จ: ' + info + ' &nbsp; <button class="btn btn-xs btn-outline" style="margin-left:6px;padding:4px 10px;" onclick="retryTelegramFromSuccess()">ลองใหม่</button>'; }
   });
 }
 
@@ -2468,32 +2471,21 @@ function doConfirmOrder() {
     }
   });
 
-  // (2) v3.5.0 RESTORED: Send Telegram from branch device — original architecture
-  // Credentials auto-seeded from TELEGRAM_DEFAULT_TOKEN/CHATID + can be updated via admin Settings
+  // (2) v3.6.0: Send Telegram via Cloudflare Worker (atomic: text+PNG together)
+  // Worker handles: send sendPhoto + caption, mark notified=true in Firebase
+  // Branch source no longer contains Telegram token
   var tgStatusEl = document.getElementById('suc-tg-status');
   if (tgStatusEl) {
     tgStatusEl.style.display = 'block';
     tgStatusEl.className = 'alert alert-info';
-    tgStatusEl.innerHTML = '⏳ กำลังส่งแจ้งเตือนไปยังผู้ประสานงาน...';
-    sendTelegramRaw(ord.text, function(r) {
-      if (r.sent) {
-        // Text sent — also send invoice photo
-        tgStatusEl.innerHTML = '⏳ ส่งข้อความสำเร็จ · กำลังส่งใบส่งของ...';
-        sendInvoiceToTelegram(ord, function(ok, info) {
-          if (ok) {
-            tgStatusEl.className = 'alert alert-success';
-            tgStatusEl.innerHTML = '✅ ส่งแจ้งเตือนผู้ประสานงานสำเร็จ — รับออเดอร์ของคุณแล้ว';
-          } else {
-            tgStatusEl.className = 'alert alert-success';
-            tgStatusEl.innerHTML = '✅ ส่งข้อความสำเร็จ · ⚠️ ใบส่งของส่งไม่สำเร็จ — ผู้ประสานงานได้รับข้อความแล้ว';
-          }
-          // Mark notified=true in Firebase + local (so admin failsafe doesn't re-send)
-          markNotifiedAfterBranchSend(ord);
-        });
+    tgStatusEl.innerHTML = '⏳ กำลังสร้างใบส่งของและแจ้งเตือนผู้ประสานงาน...';
+    sendInvoiceToTelegram(ord, function(ok, info) {
+      if (ok) {
+        tgStatusEl.className = 'alert alert-success';
+        tgStatusEl.innerHTML = '✅ ส่งแจ้งเตือนผู้ประสานงานสำเร็จ — รับออเดอร์ของคุณแล้ว';
       } else {
-        // Branch Telegram failed — order is in Firebase, admin failsafe will pick up
         tgStatusEl.className = 'alert alert-danger';
-        tgStatusEl.innerHTML = '⚠️ ส่งแจ้งเตือนไม่สำเร็จ ('+r.reason+')<br>ออเดอร์อยู่ในระบบแล้ว · ผู้ประสานงานจะได้รับการแจ้งเตือนเมื่อเปิดระบบครั้งหน้า';
+        tgStatusEl.innerHTML = '⚠️ ส่งแจ้งเตือนไม่สำเร็จ ('+info+')<br>ออเดอร์อยู่ในระบบแล้ว · ผู้ประสานงานจะส่งใหม่จากหน้าประวัติออเดอร์';
       }
     });
   }
