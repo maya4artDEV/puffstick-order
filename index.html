@@ -15,7 +15,9 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700;800;900&family=Poppins:wght@400;600;700;800&display=swap" rel="stylesheet">
 <!-- html2canvas — HTML→PNG for invoice generation -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<!-- crossorigin="anonymous" enables window.onerror to capture detailed error messages -->
+<!-- instead of generic "Script error." (required for debugging html2canvas CORS issues) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" crossorigin="anonymous"></script>
 <style>
 :root {
   /* Editorial blue palette */
