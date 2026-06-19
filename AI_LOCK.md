@@ -36,3 +36,46 @@
 ---
 
 ## 🏗️ Architecture
+[Branch confirms order]
+
+↓
+
+Firebase RTDB (notified=false)
+
+↓
+
+Layer 1: Branch sends Telegram (instant)
+
+└─ PATCH notified=true
+
+Layer 2: Cloudflare Worker (cron * * * * *)
+
+└─ Picks up notified=false → sends → marks true
+
+Layer 3: Admin manual button
+
+**Stack:** Single-file HTML/JS, Firebase REST API, Cloudflare Worker
+**Version:** v3.5.0
+
+---
+
+## 🚦 Patterns ที่บังคับใช้
+
+| Pattern | สรุป |
+|---|---|
+| P-01 | r.ok check ทุก fetch push |
+| P-02 | Mark & Retry — ทุก failed sync |
+| P-03 | Visible state ทุก async op |
+| P-08 | Version + no-cache + auto-update |
+| P-14 | Health ping + error telemetry |
+| P-21 | Restore before redesign |
+| P-22 | Defense in depth สำหรับ critical ops |
+
+---
+
+## ❓ เมื่อไม่แน่ใจ → หยุดถาม Tony ก่อน
+
+- Schema change ที่อาจ break user data
+- Firebase paths หรือ rules
+- Feature ใหม่ที่อาจกระทบ POS/CRM
+- ไฟล์โตเกิน 3,000 lines
