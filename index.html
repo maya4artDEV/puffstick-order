@@ -839,6 +839,12 @@ textarea.form-input{resize:none;line-height:1.5}
 // ─── FIREBASE HARDCODED (ลูกค้าไม่ต้องตั้ง) ─────────────────────
 var FB_DEFAULT_URL  = 'https://puff-stick-fc-order-default-rtdb.asia-southeast1.firebasedatabase.app';
 var FB_DEFAULT_PATH = 'puffstick';
+// v3.5.0: Telegram credentials default fallback (same pattern as FB_DEFAULT_URL above)
+// - Branches inherit these automatically (no manual setup)
+// - Admin can override via Settings — overrides sync to all devices via Firebase config
+// - If token gets revoked: admin updates in Settings → pushed to Firebase → all devices pull
+var TELEGRAM_DEFAULT_TOKEN  = '8751318167:AAEKTOhObZEMntTzAMBIY_v0g6317YAPUrI';
+var TELEGRAM_DEFAULT_CHATID = '5566010745';
 
 // ============================================================
 // CONSTANTS
@@ -857,8 +863,8 @@ var FILLINGS = [
   {id:'choc',   name:'ช็อกโกแลต',      emoji:'🍫'}
 ];
 
-var APP_VERSION = '3.4.5';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
-var APP_BUILD   = '2026.06.18-safety';  // วันที่ deploy
+var APP_VERSION = '3.5.0';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
+var APP_BUILD   = '2026.06.18-restore';  // วันที่ deploy
 
 var PRICE_PER_PC = 20;
 var DISC_THRESH  = 4500;
@@ -1104,10 +1110,12 @@ function initApp() {
     if (changed) lsSet('branches', bs);
   }
 
-  // Ensure settings exists
+  // v3.5.0: Auto-seed Telegram credentials if empty (was removed by Antigravity in v3.3.x)
+  // - Fresh devices/cleared cache get working credentials immediately
+  // - Admin can override via Settings (which pushes to Firebase config → all devices pull)
   var cfg = lsGet('settings') || {};
-  if (cfg.tgBotToken === undefined) { cfg.tgBotToken = ''; }
-  if (cfg.tgChatId === undefined)   { cfg.tgChatId   = ''; }
+  if (!cfg.tgBotToken) { cfg.tgBotToken = TELEGRAM_DEFAULT_TOKEN; }
+  if (!cfg.tgChatId)   { cfg.tgChatId   = TELEGRAM_DEFAULT_CHATID; }
   lsSet('settings', cfg);
 
   setLandingDate();
@@ -2415,20 +2423,16 @@ function retryTelegramFromSuccess() {
 function doConfirmOrder() {
   var ord=APP.order; if (!ord) { alert('กรุณาตรวจสอบออเดอร์ก่อน'); return; }
   ord.id = 'o'+Date.now();
-  // v3.4.0: Mark for admin-side notification pickup
-  ord.notified = false;        // becomes true when admin sends Telegram
+  // v3.5.0: Mark notified flag for admin failsafe (if branch send fails)
+  ord.notified = false;
   ord.notifiedAt = null;
-  ord.notifiedBy = null;
   ord.notifyAttempts = 0;
 
-  // Detect if THIS order causes the branch to cross threshold (for celebration popup)
   var baBefore = computeMonthlyAccum(ord.branchId);
   var orders=lsGet('orders')||[]; orders.unshift(ord);
-  // v3.4.3: VERIFY save succeeded — if not, alert branch + don't proceed
   var saveOk = lsSet('orders', orders);
   if (!saveOk) {
     alert('⚠️ ไม่สามารถบันทึกข้อมูลในเครื่องได้\n\nหน่วยความจำของเครื่องอาจเต็ม กรุณา:\n1) ปิดและเปิด app ใหม่\n2) หากยังไม่ได้ — แจ้งผู้ประสานงาน');
-    // Push order to Firebase anyway as best-effort recovery
     syncOrderToFirebase(ord);
     return;
   }
@@ -2443,39 +2447,90 @@ function doConfirmOrder() {
     saveBranches(branches);
   }
 
-  // Sync to Firebase — this is the ONLY thing that matters for branch
+  // (1) Push to Firebase
   var fbStatusEl = document.getElementById('suc-fb-status');
   if (fbStatusEl) {
     fbStatusEl.style.display = 'block';
     fbStatusEl.className = 'alert alert-info';
-    fbStatusEl.innerHTML = '⏳ กำลังส่งออเดอร์ไประบบ...';
+    fbStatusEl.innerHTML = '⏳ กำลังบันทึกออเดอร์ไประบบ...';
   }
   syncOrderToFirebase(ord).then(function(res){
     if (fbStatusEl) {
       if (res.ok) {
         fbStatusEl.className = 'alert alert-success';
-        fbStatusEl.innerHTML = '✅ ออเดอร์ส่งถึงระบบสำเร็จ — ผู้ประสานงานจะได้รับการแจ้งเตือน';
+        fbStatusEl.innerHTML = '✅ บันทึกออเดอร์ขึ้นระบบสำเร็จ';
       } else {
         fbStatusEl.className = 'alert alert-danger';
-        fbStatusEl.innerHTML = '⚠️ ยังส่งไม่สำเร็จ ('+res.reason+') — ออเดอร์อยู่ในเครื่องและจะส่งให้เองเมื่อเชื่อมอินเทอร์เน็ตอีกครั้ง';
+        fbStatusEl.innerHTML = '⚠️ บันทึกไม่สำเร็จ ('+res.reason+') — จะลองใหม่อัตโนมัติเมื่อกลับมาเปิดแอป';
       }
     }
-    // v3.4.2: Best-effort Telegram from branch device (instant notification path)
-    // If branch's credentials work → instant. If not → admin failsafe picks up.
-    if (res.ok) {
-      setTimeout(function(){ attemptBranchTelegramNotify(ord); }, 200);
-    }
   });
+
+  // (2) v3.5.0 RESTORED: Send Telegram from branch device — original architecture
+  // Credentials auto-seeded from TELEGRAM_DEFAULT_TOKEN/CHATID + can be updated via admin Settings
+  var tgStatusEl = document.getElementById('suc-tg-status');
+  if (tgStatusEl) {
+    tgStatusEl.style.display = 'block';
+    tgStatusEl.className = 'alert alert-info';
+    tgStatusEl.innerHTML = '⏳ กำลังส่งแจ้งเตือนไปยังผู้ประสานงาน...';
+    sendTelegramRaw(ord.text, function(r) {
+      if (r.sent) {
+        // Text sent — also send invoice photo
+        tgStatusEl.innerHTML = '⏳ ส่งข้อความสำเร็จ · กำลังส่งใบส่งของ...';
+        sendInvoiceToTelegram(ord, function(ok, info) {
+          if (ok) {
+            tgStatusEl.className = 'alert alert-success';
+            tgStatusEl.innerHTML = '✅ ส่งแจ้งเตือนผู้ประสานงานสำเร็จ — รับออเดอร์ของคุณแล้ว';
+          } else {
+            tgStatusEl.className = 'alert alert-success';
+            tgStatusEl.innerHTML = '✅ ส่งข้อความสำเร็จ · ⚠️ ใบส่งของส่งไม่สำเร็จ — ผู้ประสานงานได้รับข้อความแล้ว';
+          }
+          // Mark notified=true in Firebase + local (so admin failsafe doesn't re-send)
+          markNotifiedAfterBranchSend(ord);
+        });
+      } else {
+        // Branch Telegram failed — order is in Firebase, admin failsafe will pick up
+        tgStatusEl.className = 'alert alert-danger';
+        tgStatusEl.innerHTML = '⚠️ ส่งแจ้งเตือนไม่สำเร็จ ('+r.reason+')<br>ออเดอร์อยู่ในระบบแล้ว · ผู้ประสานงานจะได้รับการแจ้งเตือนเมื่อเปิดระบบครั้งหน้า';
+      }
+    });
+  }
 
   document.getElementById('suc-lot').textContent='Lot #'+ord.lotNo+' · รวม '+ord.total.toLocaleString()+' ชิ้น';
   document.getElementById('suc-detail').textContent='กำหนดส่ง '+ord.deliveryDate+' · '+ord.price.toLocaleString()+' บาท';
   document.getElementById('suc-disc').style.display=newReach?'block':'none';
 
-  // v3.4.0: Removed Telegram status UI from branch — admin failsafe handles errors silently
-  var tgStatusEl = document.getElementById('suc-tg-status');
-  if (tgStatusEl) tgStatusEl.style.display = 'none';
-
   goPage('page-success');
+}
+
+// v3.5.0: After successful branch-side Telegram, mark notified so admin doesn't re-send
+function markNotifiedAfterBranchSend(ord) {
+  // Update local
+  var orders = lsGet('orders') || [];
+  if (Array.isArray(orders)) {
+    for (var i=0; i<orders.length; i++) {
+      if (orders[i].id === ord.id) {
+        orders[i].notified = true;
+        orders[i].notifiedAt = Date.now();
+        orders[i].notifiedBy = (typeof getOrCreateDeviceId === 'function') ? getOrCreateDeviceId() : 'branch';
+        break;
+      }
+    }
+    lsSet('orders', orders);
+  }
+  // Update Firebase
+  var ep = fbEndpoint('orders/'+ord.id);
+  if (ep) {
+    fetch(ep, {
+      method:'PATCH',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        notified: true,
+        notifiedAt: Date.now(),
+        notifiedBy: 'branch'
+      })
+    }).catch(function(){});
+  }
 }
 
 // v3.4.2: Branch attempts to send Telegram itself (best-effort)
@@ -2762,25 +2817,27 @@ function formatOrderForTelegram(ord) {
   return s;
 }
 
-// Start polling when admin enters dashboard
+// v3.5.0: Admin loop — pulls fresh data from Firebase so admin sees new orders
+// Branches now send Telegram themselves (restored from v3.3.x architecture).
+// Admin's dispatch is now MANUAL-ONLY via the "🔁 ส่งแจ้งเตือนเดี๋ยวนี้" button
+// (for the rare case where a branch's Telegram failed and we need failsafe).
 var _dispatchInterval = null;
 function startAdminNotificationLoop() {
   if (_dispatchInterval) return; // already running
-  // v3.4.3: Polling now PULLS fresh orders from Firebase first
-  //   → pullOrdersFromFirebase internally re-renders dashboard + triggers dispatch
-  //   → admin always sees latest state without manual refresh
+  // Initial pull + render
   pullOrdersFromFirebase();
+  // Continue pulling every 30s to keep admin dashboard fresh (no auto-dispatch)
   _dispatchInterval = setInterval(function(){
     pullOrdersFromFirebase();
   }, 30000);
-  console.log('[Notify] Admin loop started — pull+dispatch every 30s');
+  console.log('[Admin] Refresh loop started — pull every 30s, no auto-dispatch');
 }
 
 function stopAdminNotificationLoop() {
   if (_dispatchInterval) {
     clearInterval(_dispatchInterval);
     _dispatchInterval = null;
-    console.log('[Notify] Admin dispatcher stopped');
+    console.log('[Admin] Refresh loop stopped');
   }
 }
 
@@ -3178,7 +3235,8 @@ function pullOrdersFromFirebase() {
       if (adminPage && adminPage.classList.contains('active')) {
         try { loadAdminDash(); } catch(e){ console.warn('[Admin] re-render failed', e); }
       }
-      setTimeout(dispatchPendingNotifications, 500);
+      // v3.5.0: No auto-dispatch — branches send Telegram themselves.
+      // Admin can still manually trigger via "🔁 ส่งแจ้งเตือนเดี๋ยวนี้" for failed branches.
     }
   }).catch(function(e){ console.warn('[FB] Pull orders failed:', e); });
 }
