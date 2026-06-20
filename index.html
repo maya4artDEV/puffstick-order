@@ -849,12 +849,6 @@ var FB_DEFAULT_PATH = 'puffstick';
 // - Token no longer in source code (lives in Worker secrets)
 // - To revoke token: update Cloudflare secret — branches need no update
 var WORKER_URL = 'https://puffstick-telegram-notifier.92foodlimited.workers.dev';
-// v3.5.0: Telegram credentials default fallback (same pattern as FB_DEFAULT_URL above)
-// - Branches inherit these automatically (no manual setup)
-// - Admin can override via Settings — overrides sync to all devices via Firebase config
-// - If token gets revoked: admin updates in Settings → pushed to Firebase → all devices pull
-var TELEGRAM_DEFAULT_TOKEN  = '8751318167:AAEKTOhObZEMntTzAMBIY_v0g6317YAPUrI';
-var TELEGRAM_DEFAULT_CHATID = '5566010745';
 
 // ============================================================
 // CONSTANTS
@@ -1120,14 +1114,9 @@ function initApp() {
     if (changed) lsSet('branches', bs);
   }
 
-  // v3.5.0: Auto-seed Telegram credentials if empty (was removed by Antigravity in v3.3.x)
-  // - Fresh devices/cleared cache get working credentials immediately
-  // - Admin can override via Settings (which pushes to Firebase config → all devices pull)
-  var cfg = lsGet('settings') || {};
-  if (!cfg.tgBotToken) { cfg.tgBotToken = TELEGRAM_DEFAULT_TOKEN; }
-  if (!cfg.tgChatId)   { cfg.tgChatId   = TELEGRAM_DEFAULT_CHATID; }
-  lsSet('settings', cfg);
-
+  // v3.6.0: Telegram credentials removed from source code
+  // - Token now lives only in Cloudflare Worker secrets
+  // - Branch sends Telegram via Worker proxy (no token needed at branch)
   setLandingDate();
   applyCustomImages();
 
@@ -2379,25 +2368,6 @@ function doShareLine() {
   window.open('https://line.me/R/share?text='+encodeURIComponent(txt), '_blank');
 }
 
-function doSendTelegram() {
-  // v3.4.4: Function kept for backward-compat (in case old cached HTML still calls it)
-  // but UI elements removed in v3.4.1. Guard against null.
-  var cfg=lsGet('settings')||{};
-  if (!cfg.tgBotToken||!cfg.tgChatId) { alert('กรุณาตั้งค่า Telegram ก่อน'); return; }
-  var prevText=document.getElementById('prev-text');
-  var txt = prevText ? prevText.textContent : '';
-  var stEl=document.getElementById('send-status');
-  if (stEl) { stEl.style.display='block'; stEl.className='alert alert-info'; stEl.textContent='⏳ กำลังส่ง...'; }
-  sendTelegramRaw(txt, function(result) {
-    if (stEl) {
-      if (result.sent) { stEl.className='alert alert-success'; stEl.textContent='✅ ส่ง Telegram สำเร็จ!'; }
-      else { stEl.className='alert alert-danger'; stEl.textContent='❌ '+result.reason; }
-    } else {
-      alert(result.sent ? '✅ ส่ง Telegram สำเร็จ!' : '❌ '+result.reason);
-    }
-  });
-}
-
 // Reusable Telegram sender — used by both manual button and auto-send on confirm
 function sendTelegramRaw(orderText, callback) {
   var cfg = lsGet('settings') || {};
@@ -2502,74 +2472,6 @@ function doConfirmOrder() {
 }
 
 // v3.5.0: After successful branch-side Telegram, mark notified so admin doesn't re-send
-function markNotifiedAfterBranchSend(ord) {
-  // Update local
-  var orders = lsGet('orders') || [];
-  if (Array.isArray(orders)) {
-    for (var i=0; i<orders.length; i++) {
-      if (orders[i].id === ord.id) {
-        orders[i].notified = true;
-        orders[i].notifiedAt = Date.now();
-        orders[i].notifiedBy = (typeof getOrCreateDeviceId === 'function') ? getOrCreateDeviceId() : 'branch';
-        break;
-      }
-    }
-    lsSet('orders', orders);
-  }
-  // Update Firebase
-  var ep = fbEndpoint('orders/'+ord.id);
-  if (ep) {
-    fetch(ep, {
-      method:'PATCH',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        notified: true,
-        notifiedAt: Date.now(),
-        notifiedBy: 'branch'
-      })
-    }).catch(function(){});
-  }
-}
-
-// v3.4.2: Branch attempts to send Telegram itself (best-effort)
-// If it works → instant notification. If not → silently leave for admin dispatcher.
-// No error UI to branch — they don't need to know if this fails.
-function attemptBranchTelegramNotify(ord) {
-  var cfg = lsGet('settings') || {};
-  if (!cfg.tgBotToken || !cfg.tgChatId) {
-    console.log('[Notify] Branch has no Telegram config — admin failsafe will handle');
-    return;
-  }
-  // Don't re-notify if already marked
-  if (ord.notified === true) return;
-
-  sendTelegramRaw(ord.text || formatOrderForTelegram(ord), function(r) {
-    if (!r.sent) {
-      console.warn('[Notify] Branch Telegram failed (admin failsafe will retry):', r.reason);
-      return;
-    }
-    // Text sent — try invoice image
-    sendInvoiceToTelegram(ord, function(ok, info){
-      // Mark notified=true in Firebase so admin dispatcher skips it
-      patchOrderNotified(ord.id, true, null);
-      // Update local
-      var orders = lsGet('orders') || [];
-      if (Array.isArray(orders)) {
-        for (var i=0; i<orders.length; i++) {
-          if (orders[i].id === ord.id) {
-            orders[i].notified = true;
-            orders[i].notifiedAt = Date.now();
-            orders[i].notifiedBy = getOrCreateDeviceId();
-            break;
-          }
-        }
-        lsSet('orders', orders);
-      }
-      console.log('[Notify] Branch sent Telegram directly:', ord.id, '(image:', (ok?'ok':'fail'), ')');
-    });
-  });
-}
-
 function doNewOrder() {
   APP.order = null;
   document.getElementById('o-notes').value = '';
