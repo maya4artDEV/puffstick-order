@@ -196,7 +196,7 @@ textarea.form-input{resize:none;line-height:1.5}
 .mloc-del{background:none;border:none;color:var(--gray-light);font-size:18px;cursor:pointer;padding:2px 6px;}
 .mloc-del:active{color:var(--red);}
 /* ─── INVOICE TEMPLATE ─── */
-.inv-wrap{position:absolute;left:-9999px;top:0;width:780px;background:#fff;padding:32px 36px;font-family:'Noto Sans Thai','Sarabun',sans-serif;color:#1a1a1a;font-size:12px;line-height:1.4;}
+.inv-wrap{position:absolute;left:-9999px;top:0;width:794px;min-height:1123px;box-sizing:border-box;background:#fff;padding:32px 36px;font-family:'Noto Sans Thai','Sarabun',sans-serif;color:#1a1a1a;font-size:12px;line-height:1.4;}
 .inv-wrap.visible{position:relative;left:0;}
 .inv-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1.5px solid #333;padding-bottom:10px;margin-bottom:14px;}
 .inv-head-left{flex:1;}
@@ -781,6 +781,10 @@ textarea.form-input{resize:none;line-height:1.5}
       <button class="btn btn-primary" onclick="copyModalOrd()">📋 คัดลอกข้อความ</button>
       <button class="btn btn-danger btn-sm" onclick="deleteOrder()" style="background:var(--red);color:#fff;">🗑 ลบออเดอร์นี้</button>
     </div>
+    <div class="mt-8">
+      <button class="btn btn-primary" id="btn-resend-invoice" onclick="resendInvoiceFromAdmin()" style="width:100%;background:var(--blue-deep);">📤 ส่งใบส่งของ PNG ซ้ำ</button>
+    </div>
+    <div id="adm-resend-status" class="mt-8" style="display:none;"></div>
   </div>
 </div>
 
@@ -3471,6 +3475,9 @@ function showOrdDetail(id) {
   body+='</div>';
   document.getElementById('modal-ord-body').innerHTML=body;
   selModalPay(o.payStatus||'pending');
+  // v3.6.0: reset resend status (prevent stale message from previous order)
+  var rs = document.getElementById('adm-resend-status');
+  if (rs) { rs.style.display='none'; rs.innerHTML=''; }
   openModal('modal-ord');
 }
 
@@ -3513,6 +3520,32 @@ function deleteOrder() {
   closeModal('modal-ord');
   loadHistory();
   loadAdminDash();
+}
+
+// v3.6.0: Admin manual resend invoice PNG via Worker
+// Use case: branch device fail to send (e.g. mobile network drop, html2canvas fail)
+// → admin can re-render and resend on demand
+function resendInvoiceFromAdmin() {
+  var orders=lsGet('orders')||[]; var o=null;
+  for (var i=0; i<orders.length; i++) { if(orders[i].id===APP.viewOrdId){o=orders[i];break;} }
+  if (!o) { alert('ไม่พบออเดอร์'); return; }
+  var btn = document.getElementById('btn-resend-invoice');
+  var status = document.getElementById('adm-resend-status');
+  if (!status) return;
+  if (btn) { btn.disabled = true; btn.innerHTML = '⏳ กำลังส่ง...'; }
+  status.style.display = 'block';
+  status.className = 'alert alert-info';
+  status.innerHTML = '⏳ กำลังสร้างใบส่งของและส่งซ้ำ...';
+  sendInvoiceToTelegram(o, function(ok, info){
+    if (btn) { btn.disabled = false; btn.innerHTML = '📤 ส่งใบส่งของ PNG ซ้ำ'; }
+    if (ok) {
+      status.className = 'alert alert-success';
+      status.innerHTML = '✅ ส่งใบส่งของซ้ำสำเร็จ — Telegram ได้รับแล้ว';
+    } else {
+      status.className = 'alert alert-danger';
+      status.innerHTML = '⚠️ ส่งซ้ำไม่สำเร็จ: ' + info + ' &nbsp; <button class="btn btn-xs" style="padding:4px 10px;" onclick="resendInvoiceFromAdmin()">ลองอีกครั้ง</button>';
+    }
+  });
 }
 
 // ============================================================
