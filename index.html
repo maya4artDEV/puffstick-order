@@ -3127,15 +3127,36 @@ function pullOrdersFromFirebase() {
     if (!remoteOrds.length) return;
     var localOrds = lsGet('orders') || [];
     if (!Array.isArray(localOrds)) localOrds = [];
-    // Merge: local first, remote wins for same id
+    // v3.6.0: Delete-aware merge (fixes B1 sync bug)
+    // - Remote = source of truth for orders that have been synced
+    // - Local-only orders kept ONLY if marked unsynced (P-02 safeguard)
+    // - Drops local orders that remote no longer has = deletion propagation
+    var unsyncedMap = lsGet('unsynced_orders') || {};
+    var remoteIds = {};
+    for (var r1=0; r1<remoteOrds.length; r1++) { remoteIds[remoteOrds[r1].id] = true; }
     var map = {};
-    for (var i=0; i<localOrds.length; i++) { if(localOrds[i].id) map[localOrds[i].id] = localOrds[i]; }
+    // Keep local order only if: remote has it OR it's pending push (unsynced)
+    for (var i=0; i<localOrds.length; i++) {
+      var lo = localOrds[i];
+      if (!lo || !lo.id) continue;
+      if (remoteIds[lo.id] || unsyncedMap[lo.id]) {
+        map[lo.id] = lo;
+      }
+      // else: order deleted from another device → drop from local
+    }
+    // Remote wins for same id (latest data)
     for (var j=0; j<remoteOrds.length; j++) { if(remoteOrds[j].id) map[remoteOrds[j].id] = remoteOrds[j]; }
     var merged = Object.values(map);
     merged.sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
+    // Count orders dropped due to remote deletion (for log visibility)
+    var droppedCount = 0;
+    for (var di=0; di<localOrds.length; di++) {
+      var lid = localOrds[di] && localOrds[di].id;
+      if (lid && !map[lid]) droppedCount++;
+    }
     lsSet('orders', merged);
     lsSet('orders_last_pull', Date.now());
-    console.log('[FB] Pulled orders:', merged.length);
+    console.log('[FB] Pulled orders:', merged.length, '(remote:', remoteOrds.length, ', dropped-as-deleted:', droppedCount, ')');
     // v3.4.3: Re-render admin dashboard if currently visible (so stats update without reload)
     if (APP.adminIn) {
       var adminPage = document.getElementById('page-admin');
