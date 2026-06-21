@@ -1905,6 +1905,13 @@ function copyBranchOrd() {
 // Accum is computed on the fly from orders so it's always consistent
 // across devices (admin, branch, mobile, desktop).
 function computeMonthlyAccum(branchId) {
+  // v3.6.0: per-branch discount toggle — skip accumulation entirely if disabled
+  // (Spec Q2a: OFF = no accumulation, no discount calculation at all)
+  var branches = lsGet('branches') || {};
+  var branch = branches[branchId];
+  if (branch && branch.discountEnabled === false) {
+    return { total: 0, discountAvailable: false };
+  }
   var mk = getMonthKey();
   var orders = lsGet('orders') || [];
   if (!Array.isArray(orders)) orders = [];
@@ -3216,6 +3223,8 @@ function loadBranches() {
   else {
     for (var i=0; i<keys.length; i++) {
       var id=keys[i]; var b=bs[id];
+      // v3.6.0: discount default ON (undefined treated as true)
+      var discOn = (b.discountEnabled !== false);
       html += '<div class="card">';
       html += '<div class="flex-between mb-8">';
       html += '<span class="text-bold" style="font-size:15px;">'+b.name+'</span>';
@@ -3232,6 +3241,16 @@ function loadBranches() {
         }
         html += '</div>';
       }
+      // v3.6.0: per-branch discount toggle row
+      html += '<div style="display:flex;align-items:center;gap:8px;margin-top:10px;padding:8px 10px;background:rgba(255,255,255,0.04);border-radius:6px;">';
+      if (discOn) {
+        html += '<span style="font-size:13px;flex:1;">💰 ส่วนลด: <strong style="color:var(--green);">เปิด</strong></span>';
+        html += '<button class="btn btn-ghost btn-sm" style="padding:4px 10px;font-size:12px;" onclick="toggleBranchDiscount(\''+id+'\')">ปิด</button>';
+      } else {
+        html += '<span style="font-size:13px;flex:1;">🚫 ส่วนลด: <strong style="color:var(--red);">ปิด</strong></span>';
+        html += '<button class="btn btn-primary btn-sm" style="padding:4px 10px;font-size:12px;" onclick="toggleBranchDiscount(\''+id+'\')">เปิด</button>';
+      }
+      html += '</div>';
       html += '<div style="display:flex;gap:8px;margin-top:10px;">';
       html += '<button class="btn btn-outline btn-sm" onclick="editBranch(\''+id+'\')">แก้ไข</button>';
       html += '<button class="btn btn-ghost btn-sm" onclick="delBranch(\''+id+'\')">ลบ</button>';
@@ -3313,6 +3332,10 @@ function saveBranch() {
     pin: pin,
     currentLot: lot,
     locations: locs,
+    // v3.6.0: per-branch discount toggle (default true for backward-compat)
+    // - undefined or true = discount system active (สะสม + 10% discount)
+    // - false = discount disabled (no accumulation, no discount)
+    discountEnabled: (existing.discountEnabled !== false),
     // Customer details for invoice
     arCode:       document.getElementById('mbr-arcode').value.trim(),
     customerName: document.getElementById('mbr-custname').value.trim(),
@@ -3328,6 +3351,24 @@ function delBranch(id) {
   var bs=lsGet('branches')||{}; var name=bs[id]?bs[id].name:id;
   if (!confirm('ลบสาขา "'+name+'"?')) return;
   delete bs[id]; saveBranches(bs); loadBranches();
+}
+
+// v3.6.0: per-branch discount toggle (admin)
+// - Spec Q1: default true (all existing branches inherit ON)
+// - Spec Q2: OFF = no accumulation, no discount (computeMonthlyAccum returns total:0)
+// - Spec Q3: orders/total preserved — toggling back ON re-computes from order history
+function toggleBranchDiscount(id) {
+  var bs=lsGet('branches')||{};
+  if (!bs[id]) return;
+  var currentOn = (bs[id].discountEnabled !== false);
+  var newState = !currentOn;
+  var action = newState ? 'เปิด' : 'ปิด';
+  if (!confirm(action+'ส่วนลด 10% สำหรับสาขา "'+bs[id].name+'"?\n\n'+(newState
+    ? '✓ สาขาจะเริ่มสะสมยอด + ได้ส่วนลด 10% เมื่อครบ 4,500 ชิ้น'
+    : '✗ สาขาจะไม่สะสมยอด + ไม่ได้รับส่วนลด'))) return;
+  bs[id].discountEnabled = newState;
+  saveBranches(bs);
+  loadBranches();
 }
 
 // ============================================================
