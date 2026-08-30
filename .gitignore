@@ -1,0 +1,7 @@
+data/
+*rtdb-export*.json
+puff-stick-fc-order-*.json
+.env
+.dev.vars
+*token*
+_archive/
