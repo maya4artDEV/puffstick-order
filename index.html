@@ -867,8 +867,8 @@ var FILLINGS = [
   {id:'choc',   name:'ช็อกโกแลต',      emoji:'🍫'}
 ];
 
-var APP_VERSION = '3.5.0';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
-var APP_BUILD   = '2026.06.18-restore';  // วันที่ deploy
+var APP_VERSION = '3.6.1';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
+var APP_BUILD   = '2026.10.10-hotfix';  // วันที่ deploy
 
 var PRICE_PER_PC = 20;
 var DISC_THRESH  = 4500;
@@ -1628,19 +1628,70 @@ function renderInvoiceToCanvas(ord, callback) {
 
 // Download invoice as PNG (called from success page)
 function downloadInvoice() {
-  var orders = lsGet('orders') || [];
-  var ord = orders.length ? orders[0] : null;
+  var ord = getLastPlacedOrder();
   if (!ord) { alert('ไม่พบออเดอร์'); return; }
-  var btn = event && event.target ? event.target : null;
+  var btn = (window.event && window.event.target) ? window.event.target : null;
   if (btn) { btn.disabled = true; btn.textContent = '⏳ กำลังสร้างใบส่งของ...'; }
   renderInvoiceToCanvas(ord, function(err, canvas){
     if (btn) { btn.disabled = false; btn.textContent = '📄 ดาวน์โหลดใบส่งของ'; }
     if (err) { alert('❌ '+err); return; }
-    var link = document.createElement('a');
-    link.download = 'ใบส่งของ_'+(ord.branchName||'').replace(/[^a-zA-Z0-9ก-๙_-]/g,'')+'_Lot'+(ord.lotNo||'')+'.png';
-    link.href = canvas.toDataURL('image/png');
-    link.click();
+    var fname = 'ใบส่งของ_'+(ord.branchName||'').replace(/[^a-zA-Z0-9ก-๙_-]/g,'')+'_Lot'+(ord.lotNo||'')+'.png';
+    canvas.toBlob(function(blob){
+      if (!blob) { alert('❌ สร้างไฟล์รูปไม่สำเร็จ'); return; }
+      saveBlobAs(blob, fname);
+    }, 'image/png');
   });
+}
+
+// v3.6.1: one download path for CSV + PNG
+// Mobile → share sheet (works in iOS home-screen PWA / Android); desktop → anchor download.
+// Revoke is delayed — revoking right after click cancels the download on some browsers.
+function saveBlobAs(blob, filename) {
+  var ua = navigator.userAgent || '';
+  if (/ Line\//i.test(ua)) {
+    if (confirm('LINE ไม่รองรับการดาวน์โหลดไฟล์\nเปิดหน้านี้ใน browser แทนไหม?')) {
+      var u = new URL(window.location.href);
+      u.searchParams.set('openExternalBrowser', '1');
+      window.location.href = u.toString();
+    }
+    return;
+  }
+  var isMobile = /Android|iPhone|iPad|iPod/i.test(ua);
+  if (isMobile && navigator.canShare && window.File) {
+    try {
+      var file = new File([blob], filename, { type: blob.type });
+      if (navigator.canShare({ files: [file] })) {
+        navigator.share({ files: [file], title: filename }).catch(function(e){
+          if (e && e.name === 'AbortError') return;            // user cancelled
+          if (/^image\//.test(blob.type)) showImageForSave(blob); // share blocked after async render
+          else downloadViaAnchor(blob, filename);
+        });
+        return;
+      }
+    } catch(e) { /* fall through to anchor */ }
+  }
+  downloadViaAnchor(blob, filename);
+}
+
+// Last-resort for phones: show the image full screen → long-press to save
+function showImageForSave(blob) {
+  var url = URL.createObjectURL(blob);
+  var ov = document.createElement('div');
+  ov.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.92);overflow:auto;padding:16px;text-align:center;';
+  ov.innerHTML = '<div style="color:#fff;font-size:15px;font-weight:700;margin-bottom:10px;">กดค้างที่รูป → บันทึกรูปภาพ</div>' +
+    '<img src="' + url + '" style="max-width:100%;background:#fff;border-radius:6px;">' +
+    '<button class="btn btn-ghost mt-10" style="max-width:280px;margin:12px auto 0;">ปิด</button>';
+  ov.querySelector('button').onclick = function(){ document.body.removeChild(ov); URL.revokeObjectURL(url); };
+  document.body.appendChild(ov);
+}
+
+function downloadViaAnchor(blob, filename) {
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url; a.download = filename; a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function(){ document.body.removeChild(a); URL.revokeObjectURL(url); }, 4000);
 }
 
 // Send invoice to Telegram VIA CLOUDFLARE WORKER PROXY (v3.6.0)
@@ -1710,30 +1761,52 @@ function fbConfig() {
   return { base: url + '/' + path, auth: auth };
 }
 
-function pullBranchesFromFirebase() {
+// v3.6.1: cloud = single source of truth for branches.
+// Writes are field-level PATCH (patchBranchCloud) so a stale device can never
+// clobber admin changes (discount toggle, PIN) or regress another lot number.
+// cb (optional) always fires — with cached data when offline.
+function pullBranchesFromFirebase(cb) {
   var fb = fbConfig();
-  if (!fb) return;
+  if (!fb) { if (cb) cb(false); return; }
   var url = fb.base + '/branches_v2.json' + fb.auth;
-  fetch(url).then(function(r){ return r.ok ? r.json() : null; }).then(function(data){
-    if (!data || !data._payload) return;
-    var remote = data._payload;
-    var remoteTs = data._ts || 0;
-    var localTs = (lsGet('branches_ts') || 0);
-    if (remoteTs > localTs) {
-      // Remote is newer → adopt
-      lsSet('branches', remote);
-      lsSet('branches_ts', remoteTs);
-      console.log('[FB] Pulled branches from cloud (newer)', remoteTs);
-      // If on a relevant page, refresh UI
-      if (typeof loadBranchesPage === 'function' &&
-          document.getElementById('page-adm-branches') &&
-          document.getElementById('page-adm-branches').classList.contains('active')) {
-        loadBranchesPage();
-      }
-    } else {
-      console.log('[FB] Local branches are current');
+  fetch(url, {cache:'no-store'}).then(function(r){ return r.ok ? r.json() : null; }).then(function(data){
+    if (!data || !data._payload) { if (cb) cb(false); return; }
+    lsSet('branches', data._payload);
+    lsSet('branches_ts', data._ts || Date.now());
+    // Keep the logged-in branch snapshot in sync (lot, discount flag, locations)
+    if (APP.branch && data._payload[APP.branch.id]) {
+      var fresh = data._payload[APP.branch.id];
+      for (var k in fresh) { APP.branch[k] = fresh[k]; }
     }
-  }).catch(function(e){ console.warn('[FB] Pull failed:', e); });
+    var admPage = document.getElementById('page-adm-branches');
+    if (admPage && admPage.classList.contains('active')) loadBranches();
+    if (cb) cb(true);
+  }).catch(function(e){ console.warn('[FB] Pull failed:', e); if (cb) cb(false); });
+}
+
+// Pull with a time cap — cb fires exactly once (fresh data, or cached after timeout/offline)
+function refreshBranches(cb, timeoutMs) {
+  var done = false;
+  var finish = function(ok){ if (done) return; done = true; cb(ok); };
+  setTimeout(function(){ finish(false); }, timeoutMs || 5000);
+  pullBranchesFromFirebase(finish);
+}
+
+// Field-level write for ONE branch: fields = {currentLot: 5} or full branch object.
+// fields === null deletes the branch. Multi-path PATCH = atomic, siblings untouched.
+function patchBranchCloud(branchId, fields) {
+  var fb = fbConfig();
+  if (!fb) return Promise.resolve(false);
+  var body = { _ts: Date.now() };
+  if (fields === null) { body['_payload/' + branchId] = null; }
+  else { for (var k in fields) { body['_payload/' + branchId + '/' + k] = fields[k]; } }
+  lsSet('branches_ts', body._ts);
+  return fetch(fb.base + '/branches_v2.json' + fb.auth, {
+    method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)
+  }).then(function(r){
+    if (!r.ok) { console.warn('[FB] patchBranchCloud HTTP', r.status); alert('⚠️ บันทึกสาขาขึ้น cloud ไม่สำเร็จ (HTTP '+r.status+')'); }
+    return r.ok;
+  }).catch(function(e){ console.warn('[FB] patchBranchCloud error', e); return false; });
 }
 
 function pushBranchesToFirebase() {
@@ -1800,6 +1873,7 @@ function goPage(id) {
 function padZ(n) { return n < 10 ? '0'+n : ''+n; }
 function toThaiDate(d) { return padZ(d.getDate())+'/'+padZ(d.getMonth()+1)+'/'+((d.getFullYear()+543)%100); }
 function getMonthKey() { var d=new Date(); return d.getFullYear()+'-'+padZ(d.getMonth()+1); }
+function localISODate(d) { return d.getFullYear()+'-'+padZ(d.getMonth()+1)+'-'+padZ(d.getDate()); }
 
 // ─── FORCE UPDATE (clear cache + reload) ────────────────────────
 // Solves PWA / Add-to-Home-Screen showing stale HTML on mobile.
@@ -1958,6 +2032,13 @@ function doLoginBranch() {
   var pin = '';
   for (var i = 0; i < 4; i++) { var d=document.getElementById('p'+i); pin += (d ? d.value.slice(-1) : ''); }
   if (pin.length < 4) { showErr('bl-error','กรุณากรอก PIN ให้ครบ 4 หลัก'); return; }
+  // v3.6.1: always log in against fresh cloud data (PIN / lot / discount flag)
+  if (APP.loggingIn) return;
+  APP.loggingIn = true;
+  refreshBranches(function(){ APP.loggingIn = false; loginWithPin(pin); }, 5000);
+}
+
+function loginWithPin(pin) {
   var bs = lsGet('branches') || {};
   var found = null;
   var keys = Object.keys(bs);
@@ -1967,7 +2048,17 @@ function doLoginBranch() {
   if (!found) { showErr('bl-error','PIN ไม่ถูกต้อง'); return; }
   for (var j = 0; j < 4; j++) { var pe=document.getElementById('p'+j); if(pe) pe.value=''; }
   APP.branch = found; APP.payStatus = 'pending'; APP.order = null;
+  logBranchLogin(found);
   initOrderPage(); goPage('page-order');
+}
+
+// v3.6.1 (T8): login audit — lets admin see one device entering several branches
+function logBranchLogin(b) {
+  var ep = fbEndpoint('branch_health/logins');
+  if (!ep) return;
+  fetch(ep, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
+    ts: Date.now(), deviceId: getOrCreateDeviceId(), branchId: b.id, branchName: b.name, appVersion: APP_VERSION
+  })}).catch(function(){});
 }
 
 // ============================================================
@@ -1986,8 +2077,9 @@ function initOrderPage() {
   renderLocTabs();
   renderFillings();
   var tom = new Date(); tom.setDate(tom.getDate()+1);
-  document.getElementById('del-date').value = tom.toISOString().split('T')[0];
-  document.getElementById('del-date').min   = new Date().toISOString().split('T')[0];
+  // v3.6.1: local date (toISOString is UTC → wrong day between 00:00-06:59 Bangkok)
+  document.getElementById('del-date').value = localISODate(tom);
+  document.getElementById('del-date').min   = localISODate(new Date());
   // Reset auxiliary inputs
   var ep = document.getElementById('extra-pap'); if (ep) ep.value = 0;
   var bs = document.getElementById('box-small'); if (bs) bs.value = 0;
@@ -2247,6 +2339,13 @@ function doPreview() {
     if (total === 0) { alert('กรุณากรอกจำนวนขนมอย่างน้อย 1 ชิ้น'); return; }
     var delDateEl = document.getElementById('del-date');
     if (!delDateEl || !delDateEl.value) { alert('กรุณาเลือกวันที่รับขนม'); return; }
+  } catch(e0) { console.error('[doPreview] Error:', e0); throw e0; }
+  // v3.6.1: refresh discount flag / lot from cloud before pricing (stale-discount fix)
+  refreshBranches(function(){ loadAccumBar(); checkDiscBadge(); showPreview(); }, 5000);
+}
+
+function showPreview() {
+  try {
     buildOrderText();
     var ba=computeMonthlyAccum(APP.branch.id);
     var discBanner = document.getElementById('preview-disc-banner');
@@ -2391,9 +2490,8 @@ function sendTelegramRaw(orderText, callback) {
 
 // Retry from success page if Telegram failed
 function retryTelegramFromSuccess() {
-  var orders = lsGet('orders') || [];
-  if (!orders.length) return;
-  var lastOrder = orders[0]; // unshift means newest is index 0
+  var lastOrder = getLastPlacedOrder();
+  if (!lastOrder) return;
   var stEl = document.getElementById('suc-tg-status');
   stEl.className = 'alert alert-info';
   stEl.innerHTML = '⏳ กำลังส่ง Telegram...';
@@ -2408,7 +2506,27 @@ function retryTelegramFromSuccess() {
 // ============================================================
 function doConfirmOrder() {
   var ord=APP.order; if (!ord) { alert('กรุณาตรวจสอบออเดอร์ก่อน'); return; }
+  if (APP.confirming) return;   // double-tap guard (prevents duplicate orders)
+  APP.confirming = true;
+  // v3.6.1: re-check discount + lot against cloud right before saving
+  refreshBranches(function(){
+    var ba = computeMonthlyAccum(ord.branchId);
+    if (ba.discountAvailable !== !!ord.hasDiscount || (APP.branch.currentLot||1) !== ord.lotNo) {
+      APP.confirming = false;
+      buildOrderText();
+      var db = document.getElementById('preview-disc-banner');
+      if (db) db.style.display = ba.discountAvailable ? 'block' : 'none';
+      alert('ℹ️ ข้อมูลส่วนลด/เลข Lot อัปเดตจากระบบแล้ว\nกรุณาตรวจออเดอร์อีกครั้งแล้วกดยืนยัน');
+      return;
+    }
+    confirmOrderNow(ord);
+  }, 5000);
+}
+
+function confirmOrderNow(ord) {
   ord.id = 'o'+Date.now();
+  ord.deviceId = getOrCreateDeviceId();
+  APP.lastOrderId = ord.id;
   // v3.5.0: Mark notified flag for admin failsafe (if branch send fails)
   ord.notified = false;
   ord.notifiedAt = null;
@@ -2419,19 +2537,19 @@ function doConfirmOrder() {
   var saveOk = lsSet('orders', orders);
   if (!saveOk) {
     alert('⚠️ ไม่สามารถบันทึกข้อมูลในเครื่องได้\n\nหน่วยความจำของเครื่องอาจเต็ม กรุณา:\n1) ปิดและเปิด app ใหม่\n2) หากยังไม่ได้ — แจ้งผู้ประสานงาน');
-    syncOrderToFirebase(ord);
+    syncOrderToFirebase(ord, true);
+    APP.confirming = false;
     return;
   }
   var baAfter = computeMonthlyAccum(ord.branchId);
   var newReach = (!baBefore.discountAvailable && baAfter.discountAvailable);
 
+  // v3.6.1: write ONLY this branch's lot (never the whole branches object)
+  var newLot=(ord.lotNo||1)+1;
   var branches=lsGet('branches')||{};
-  if (branches[ord.branchId]) {
-    var newLot=(ord.lotNo||1)+1;
-    branches[ord.branchId].currentLot=newLot;
-    APP.branch.currentLot=newLot;
-    saveBranches(branches);
-  }
+  if (branches[ord.branchId]) { branches[ord.branchId].currentLot=newLot; lsSet('branches', branches); }
+  APP.branch.currentLot=newLot;
+  patchBranchCloud(ord.branchId, {currentLot: newLot});
 
   // (1) Push to Firebase
   var fbStatusEl = document.getElementById('suc-fb-status');
@@ -2440,7 +2558,15 @@ function doConfirmOrder() {
     fbStatusEl.className = 'alert alert-info';
     fbStatusEl.innerHTML = '⏳ กำลังบันทึกออเดอร์ไประบบ...';
   }
-  syncOrderToFirebase(ord).then(function(res){
+  // (2) v3.6.1: Telegram is sent AFTER the order exists in Firebase
+  // (the Worker verifies the order first — parallel send could hit 'order-not-found')
+  var tgStatusEl = document.getElementById('suc-tg-status');
+  if (tgStatusEl) {
+    tgStatusEl.style.display = 'block';
+    tgStatusEl.className = 'alert alert-info';
+    tgStatusEl.innerHTML = '⏳ กำลังสร้างใบส่งของและแจ้งเตือนผู้ประสานงาน...';
+  }
+  syncOrderToFirebase(ord, true).then(function(res){
     if (fbStatusEl) {
       if (res.ok) {
         fbStatusEl.className = 'alert alert-success';
@@ -2450,16 +2576,12 @@ function doConfirmOrder() {
         fbStatusEl.innerHTML = '⚠️ บันทึกไม่สำเร็จ ('+res.reason+') — จะลองใหม่อัตโนมัติเมื่อกลับมาเปิดแอป';
       }
     }
-  });
-
-  // (2) v3.6.0: Send Telegram via Cloudflare Worker (atomic: text+PNG together)
-  // Worker handles: send sendPhoto + caption, mark notified=true in Firebase
-  // Branch source no longer contains Telegram token
-  var tgStatusEl = document.getElementById('suc-tg-status');
-  if (tgStatusEl) {
-    tgStatusEl.style.display = 'block';
-    tgStatusEl.className = 'alert alert-info';
-    tgStatusEl.innerHTML = '⏳ กำลังสร้างใบส่งของและแจ้งเตือนผู้ประสานงาน...';
+    if (!tgStatusEl) return;
+    if (!res.ok) {
+      tgStatusEl.className = 'alert alert-danger';
+      tgStatusEl.innerHTML = '⚠️ ยังส่งแจ้งเตือนไม่ได้ (ออเดอร์ยังไม่ขึ้นระบบ) — ผู้ประสานงานจะส่งให้จากหน้าประวัติออเดอร์';
+      return;
+    }
     sendInvoiceToTelegram(ord, function(ok, info) {
       if (ok) {
         tgStatusEl.className = 'alert alert-success';
@@ -2469,13 +2591,21 @@ function doConfirmOrder() {
         tgStatusEl.innerHTML = '⚠️ ส่งแจ้งเตือนไม่สำเร็จ ('+info+')<br>ออเดอร์อยู่ในระบบแล้ว · ผู้ประสานงานจะส่งใหม่จากหน้าประวัติออเดอร์';
       }
     });
-  }
+  });
 
   document.getElementById('suc-lot').textContent='Lot #'+ord.lotNo+' · รวม '+ord.total.toLocaleString()+' ชิ้น';
   document.getElementById('suc-detail').textContent='กำหนดส่ง '+ord.deliveryDate+' · '+ord.price.toLocaleString()+' บาท';
   document.getElementById('suc-disc').style.display=newReach?'block':'none';
 
   goPage('page-success');
+  APP.confirming = false;
+}
+
+// v3.6.1: the order just placed on THIS device (orders[0] may belong to another branch after a pull)
+function getLastPlacedOrder() {
+  var orders = lsGet('orders') || [];
+  for (var i = 0; i < orders.length; i++) { if (orders[i].id === APP.lastOrderId) return orders[i]; }
+  return null;
 }
 
 // v3.5.0: After successful branch-side Telegram, mark notified so admin doesn't re-send
@@ -2508,7 +2638,10 @@ function fbEndpoint(sub) {
   if (c.secret) base += '?auth=' + c.secret;
   return base;
 }
-function syncOrderToFirebase(ord) {
+// v3.6.1: PATCH (not PUT). Notify fields are owned by the Worker — only the
+// creating call sends notified:false; later edits/retries never overwrite them
+// (PUT from a stale local copy used to reset notified=true → phantom backlog).
+function syncOrderToFirebase(ord, isCreate) {
   var ep=fbEndpoint('orders/'+ord.id);
   if (!ep) {
     markOrderUnsynced(ord.id, 'no-firebase-config');
@@ -2516,9 +2649,13 @@ function syncOrderToFirebase(ord) {
   }
   // Stamp syncedAt at time of successful push
   var attemptTs = Date.now();
-  var bodyOrd = JSON.parse(JSON.stringify(ord));  // shallow clone
+  var bodyOrd = JSON.parse(JSON.stringify(ord));  // deep clone
   bodyOrd.syncedAt = attemptTs;
-  return fetch(ep,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(bodyOrd)})
+  if (!isCreate) {
+    delete bodyOrd.notified; delete bodyOrd.notifiedAt; delete bodyOrd.notifiedBy;
+    delete bodyOrd.notifyError; delete bodyOrd.notifyAttempts;
+  }
+  return fetch(ep,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(bodyOrd)})
     .then(function(r){
       if (r.ok) {
         // Save syncedAt to local copy too
@@ -2757,33 +2894,20 @@ function updateNotifyStatusCard() {
   if (!card || !titleEl || !detailEl) return;
   card.style.display = 'block';
 
-  var cfg = lsGet('settings') || {};
-  if (!cfg.tgBotToken || !cfg.tgChatId) {
-    titleEl.innerHTML = '⚠️ Notification Dispatcher — ไม่ได้ตั้งค่า';
-    titleEl.style.color = '#c00';
-    detailEl.textContent = 'กรุณาตั้งค่า Telegram Bot ที่ Settings → Telegram เพื่อรับการแจ้งเตือนออเดอร์';
-    if (lastEl) lastEl.textContent = '';
-    return;
-  }
-
+  // v3.6.1: notifications go through the Cloudflare Worker — no client token needed
   var orders = lsGet('orders') || [];
   if (!Array.isArray(orders)) orders = [];
   var now = Date.now();
-  var maxAge = 7 * 24 * 60 * 60 * 1000;
-  var pending = orders.filter(function(o){
-    if (!o || !o.id || o.notified === true || o.notified === undefined) return false;
-    var orderTs = parseInt(String(o.id||'o0').slice(1), 10) || 0;
-    return (now - orderTs) <= maxAge;
-  });
+  var pending = getPendingNotifyOrders();
 
   if (pending.length === 0) {
-    titleEl.innerHTML = '✅ Notification Dispatcher — ทำงาน';
+    titleEl.innerHTML = '✅ Telegram — ไม่มีออเดอร์ค้างแจ้งเตือน';
     titleEl.style.color = 'var(--brown-dark)';
-    detailEl.textContent = 'ไม่มีออเดอร์ค้างแจ้งเตือน · poll ทุก 30 วินาที';
+    detailEl.textContent = 'ส่งผ่าน Worker · ข้อมูลรีเฟรชทุก 30 วินาที';
   } else {
-    titleEl.innerHTML = '🔔 มีออเดอร์รอแจ้งเตือน ' + pending.length + ' รายการ';
+    titleEl.innerHTML = '🔔 มีออเดอร์ยังไม่ได้แจ้ง Telegram ' + pending.length + ' รายการ';
     titleEl.style.color = '#c00';
-    detailEl.textContent = 'จะส่ง Telegram อัตโนมัติภายใน 30 วินาที — หรือกดปุ่ม "ส่งเดี๋ยวนี้" เพื่อส่งทันที';
+    detailEl.textContent = 'กด "🔁 ส่งแจ้งเตือนเดี๋ยวนี้" เพื่อส่งใบส่งของซ้ำผ่าน Worker';
   }
 
   // v3.4.3: Show last-pull time so Tony knows data freshness
@@ -2802,11 +2926,47 @@ function updateNotifyStatusCard() {
 // Manual trigger from admin dashboard
 function manualDispatchNotifications() {
   var detailEl = document.getElementById('notify-status-detail');
-  if (detailEl) detailEl.textContent = '⏳ กำลังส่งแจ้งเตือน...';
-  dispatchPendingNotifications();
-  setTimeout(function(){
-    updateNotifyStatusCard();
-  }, 3000);
+  var list = getPendingNotifyOrders();
+  if (list.length === 0) { alert('✅ ไม่มีออเดอร์ค้างแจ้งเตือน'); return; }
+  if (!confirm('ส่งใบส่งของซ้ำ ' + list.length + ' รายการผ่าน Telegram?')) return;
+  resendQueueViaWorker(list);
+}
+
+// v3.6.1: single resend path = Worker (same as branch + history button)
+var V36_CUTOFF_TS = 1782000000000; // 2026-06-21 Worker deploy — older orders have no notify fields
+function getPendingNotifyOrders() {
+  var orders = lsGet('orders') || [];
+  if (!Array.isArray(orders)) return [];
+  return orders.filter(function(o){
+    var ts = parseInt(String((o && o.id) || 'o0').slice(1), 10) || 0;
+    return o && o.id && ts >= V36_CUTOFF_TS && o.notified !== true;
+  });
+}
+
+function resendQueueViaWorker(list) {
+  var detailEl = document.getElementById('notify-status-detail');
+  var okCount = 0, failCount = 0, idx = 0;
+  function next() {
+    if (idx >= list.length) {
+      var msg = '📤 ส่งซ้ำเสร็จ — สำเร็จ ' + okCount + ' / ไม่สำเร็จ ' + failCount;
+      if (detailEl) detailEl.textContent = msg;
+      pullOrdersFromFirebase();
+      alert(msg);
+      return;
+    }
+    var o = list[idx++];
+    if (detailEl) detailEl.textContent = '⏳ กำลังส่ง ' + idx + '/' + list.length + ' — ' + (o.branchName||'') + ' Lot#' + (o.lotNo||'');
+    sendInvoiceToTelegram(o, function(ok){
+      if (ok) {
+        okCount++;
+        var orders = lsGet('orders') || [];
+        for (var i = 0; i < orders.length; i++) { if (orders[i].id === o.id) { orders[i].notified = true; break; } }
+        lsSet('orders', orders);
+      } else { failCount++; }
+      setTimeout(next, 1500);   // spacing avoids Telegram rate limits
+    });
+  }
+  next();
 }
 
 // v3.4.3: Manual refresh from cloud — force-pull orders + dispatch
@@ -2876,9 +3036,41 @@ function loadBranchHealth() {
     content.innerHTML = html;
     // v3.4.5: Also load recent errors
     loadRecentErrors();
+    loadLoginAudit();
   }).catch(function(e){
     content.innerHTML = '⚠️ โหลดล้มเหลว: '+e.message;
   });
+}
+
+// v3.6.1 (T8): flag devices that logged into more than one branch (last 30 days)
+function loadLoginAudit() {
+  var content = document.getElementById('branch-health-content');
+  var ep = fbEndpoint('branch_health/logins');
+  if (!content || !ep) return;
+  fetch(ep, {cache:'no-store'}).then(function(r){ return r.ok ? r.json() : null; }).then(function(data){
+    if (!data) return;
+    var cutoff = Date.now() - 30*24*60*60*1000;
+    var byDevice = {};
+    Object.keys(data).forEach(function(k){
+      var e = data[k];
+      if (!e || !e.deviceId || !e.branchId || e.ts < cutoff) return;
+      if (!byDevice[e.deviceId]) byDevice[e.deviceId] = {};
+      byDevice[e.deviceId][e.branchId] = { name: e.branchName || e.branchId, ts: e.ts };
+    });
+    var html = '';
+    Object.keys(byDevice).forEach(function(did){
+      var brs = byDevice[did]; var ids = Object.keys(brs);
+      if (ids.length < 2) return;
+      html += '<div style="padding:6px 8px;background:#FFF3F0;border-left:3px solid #C0392B;border-radius:6px;margin-bottom:4px;font-size:11px;">';
+      html += '<strong>เครื่อง ' + escHtml(did.slice(-8)) + '</strong> เข้า ' + ids.length + ' สาขา: ';
+      html += ids.map(function(id){ return escHtml(brs[id].name) + ' (' + new Date(brs[id].ts).toLocaleString('th-TH') + ')'; }).join(', ');
+      html += '</div>';
+    });
+    if (html) {
+      content.innerHTML += '<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);">' +
+        '<div style="font-weight:700;font-size:12px;color:#C0392B;margin-bottom:6px;">🚨 เครื่องเดียวเข้าหลายสาขา (30 วัน)</div>' + html + '</div>';
+    }
+  }).catch(function(){});
 }
 
 // v3.4.5: Show recent JS crashes/errors from all devices
@@ -2954,34 +3146,8 @@ function recoverBacklogNotifications(hoursBack) {
   );
   if (!ok) return;
 
-  // Mark all candidates as notified=false in local + Firebase
-  var orders = lsGet('orders') || [];
-  var ids = candidates.map(function(c){return c.id;});
-  for (var i=0; i<orders.length; i++) {
-    if (ids.indexOf(orders[i].id) >= 0) {
-      orders[i].notified = false;
-      orders[i].notifyAttempts = 0;
-    }
-  }
-  lsSet('orders', orders);
-
-  // Push notified=false to Firebase for each (so dispatcher considers them)
-  candidates.forEach(function(c){
-    var ep = fbEndpoint('orders/'+c.id);
-    if (!ep) return;
-    fetch(ep, {
-      method:'PATCH',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({notified: false, notifyError: null})
-    }).catch(function(){});
-  });
-
-  // Trigger dispatcher
-  setTimeout(function(){
-    dispatchPendingNotifications();
-    updateNotifyStatusCard();
-    alert('🚀 เริ่มส่ง Telegram ' + candidates.length + ' รายการ — ดู Notification card ใน Dashboard เพื่อติดตามผล');
-  }, 800);
+  // v3.6.1: send via Worker (legacy token dispatcher silently did nothing since v3.6.0)
+  resendQueueViaWorker(candidates);
 }
 
 // Track orders that failed to sync — retry on next app load
@@ -3069,17 +3235,18 @@ function pullConfigFromFirebase() {
 // ─── VERSION CHECK ──────────────────────────────────────────────
 // Pushes current version to Firebase on every app start.
 // If another device opens with older version, it sees newer version and shows banner.
+// v3.6.1: only a NEWER build may write the version marker — an old cached device
+// used to overwrite it with its own old version, so the update banner never showed
 function pushVersionToFirebase() {
   var ep = fbEndpoint('version'); if (!ep) return;
-  fetch(ep, {
-    method: 'PUT',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({ version: APP_VERSION, build: APP_BUILD, ts: Date.now() })
-  })
-    .then(function(r){
-      if (!r.ok) console.warn('[FB] Version push HTTP error:', r.status);
-    })
-    .catch(function(e){ console.warn('[FB] Version push network error:', e); });
+  fetch(ep, {cache:'no-store'}).then(function(r){ return r.ok ? r.json() : null; }).then(function(cur){
+    if (cur && cur.version && compareVersion(APP_VERSION, cur.version) <= 0) return;
+    return fetch(ep, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ version: APP_VERSION, build: APP_BUILD, ts: Date.now() })
+    }).then(function(r){ if (!r.ok) console.warn('[FB] Version push HTTP error:', r.status); });
+  }).catch(function(e){ console.warn('[FB] Version push network error:', e); });
 }
 
 function checkVersionFromFirebase() {
@@ -3297,6 +3464,10 @@ function showAddBranch() {
   openModal('modal-branch');
 }
 function editBranch(id) {
+  // v3.6.1: open the editor on fresh cloud data (stale lot here would overwrite the branch's real lot)
+  refreshBranches(function(){ openBranchEditor(id); }, 4000);
+}
+function openBranchEditor(id) {
   var bs=lsGet('branches')||{}; var b=bs[id]; if(!b) return;
   document.getElementById('mbr-title').textContent='แก้ไขสาขา';
   document.getElementById('mbr-id').value=id; document.getElementById('mbr-name').value=b.name;
@@ -3366,12 +3537,13 @@ function saveBranch() {
     taxId:        document.getElementById('mbr-taxid').value.trim(),
     phone:        document.getElementById('mbr-phone').value.trim()
   };
-  saveBranches(bs); closeModal('modal-branch'); loadBranches();
+  lsSet('branches', bs); patchBranchCloud(id, bs[id]);   // v3.6.1: this branch only
+  closeModal('modal-branch'); loadBranches();
 }
 function delBranch(id) {
   var bs=lsGet('branches')||{}; var name=bs[id]?bs[id].name:id;
   if (!confirm('ลบสาขา "'+name+'"?')) return;
-  delete bs[id]; saveBranches(bs); loadBranches();
+  delete bs[id]; lsSet('branches', bs); patchBranchCloud(id, null); loadBranches();
 }
 
 // v3.6.0: per-branch discount toggle (admin)
@@ -3388,7 +3560,8 @@ function toggleBranchDiscount(id) {
     ? '✓ สาขาจะเริ่มสะสมยอด + ได้ส่วนลด 10% เมื่อครบ 4,500 ชิ้น'
     : '✗ สาขาจะไม่สะสมยอด + ไม่ได้รับส่วนลด'))) return;
   bs[id].discountEnabled = newState;
-  saveBranches(bs);
+  lsSet('branches', bs);
+  patchBranchCloud(id, {discountEnabled: newState});   // v3.6.1: one field only
   loadBranches();
 }
 
@@ -3700,11 +3873,8 @@ function exportCSV() {
     ].join(','));
   }
   var csv='\uFEFF'+rows.join('\r\n');
-  var blob=new Blob([csv],{type:'text/csv;charset=utf-8;'});
-  var url=URL.createObjectURL(blob);
-  var a=document.createElement('a'); a.href=url;
-  a.download='puffstick-orders-'+getMonthKey()+'.csv';
-  document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+  var blob=new Blob([csv],{type:'text/csv'});
+  saveBlobAs(blob, 'puffstick-orders-'+getMonthKey()+'.csv');   // v3.6.1: shared download path
 }
 
 // ============================================================
@@ -3941,6 +4111,17 @@ function showErr(elId, msg) {
 // BOOT
 // ============================================================
 document.addEventListener('DOMContentLoaded', function(){ initApp(); });
+// v3.6.1: app returning to foreground (PWA is rarely closed) → refresh branch data
+// so a discount toggled by admin shows up without restarting the app
+document.addEventListener('visibilitychange', function(){
+  if (document.visibilityState !== 'visible' || !APP.branch) return;
+  var op = document.getElementById('page-order');
+  if (!op || !op.classList.contains('active')) return;
+  pullBranchesFromFirebase(function(){
+    loadAccumBar(); checkDiscBadge(); updateSummary();
+    document.getElementById('o-lot-info').textContent = 'Lot #'+(APP.branch.currentLot||1)+' · '+toThaiDate(new Date());
+  });
+});
 </script>
 </body>
 </html>
