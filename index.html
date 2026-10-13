@@ -879,8 +879,8 @@ var FILLINGS = [
   {id:'choc',   name:'ช็อกโกแลต',      emoji:'🍫'}
 ];
 
-var APP_VERSION = '3.7.1';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
-var APP_BUILD   = '2026.10.13-monthly-report';  // วันที่ deploy
+var APP_VERSION = '3.7.2';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
+var APP_BUILD   = '2026.10.14-export-sheet';  // วันที่ deploy
 
 var PRICE_PER_PC = 20;
 var DISC_THRESH  = 4500;
@@ -1656,48 +1656,89 @@ function downloadInvoice() {
   });
 }
 
-// v3.6.1: one download path for CSV + PNG
-// Mobile → share sheet (works in iOS home-screen PWA / Android); desktop → anchor download.
-// Revoke is delayed — revoking right after click cancels the download on some browsers.
-function saveBlobAs(blob, filename) {
+// v3.7.2: ONE save path for CSV + PNG
+// - desktop       → direct download
+// - iPhone/iPad   → share sheet (home-screen app cannot download)
+// - Android/other → export sheet. Root cause (v3.7.1 RCA): blob downloads silently do
+//   nothing inside home-screen/in-app WebViews on Android, so the user must get options
+//   that work everywhere: copy-as-table, tap-to-download link, share, long-press image.
+// tableText (optional) = TSV for "copy as table" (pastes into Google Sheets/Excel columns)
+function saveBlobAs(blob, filename, tableText) {
   var ua = navigator.userAgent || '';
-  if (/ Line\//i.test(ua)) {
-    if (confirm('LINE ไม่รองรับการดาวน์โหลดไฟล์\nเปิดหน้านี้ใน browser แทนไหม?')) {
-      var u = new URL(window.location.href);
-      u.searchParams.set('openExternalBrowser', '1');
-      window.location.href = u.toString();
-    }
-    return;
-  }
-  // v3.7.1: share sheet ONLY on iOS (home-screen PWA can't download files).
-  // Android: share sheet sent the CSV into chat apps ("Can't send empty message") → download instead.
   var isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-  if (isIOS && navigator.canShare && window.File) {
+  var isMobile = isIOS || /Android|Mobile/i.test(ua);
+  if (!isMobile) { downloadViaAnchor(blob, filename); return; }
+  if (isIOS && !tableText && navigator.canShare && window.File) {
     try {
       var file = new File([blob], filename, { type: blob.type });
       if (navigator.canShare({ files: [file] })) {
         navigator.share({ files: [file], title: filename }).catch(function(e){
-          if (e && e.name === 'AbortError') return;            // user cancelled
-          if (/^image\//.test(blob.type)) showImageForSave(blob); // share blocked after async render
-          else downloadViaAnchor(blob, filename);
+          if (e && e.name === 'AbortError') return;
+          showExportSheet(blob, filename, tableText);
         });
         return;
       }
-    } catch(e) { /* fall through to anchor */ }
+    } catch(e) { /* fall through to sheet */ }
   }
-  downloadViaAnchor(blob, filename);
+  showExportSheet(blob, filename, tableText);
 }
 
-// Last-resort for phones: show the image full screen → long-press to save
-function showImageForSave(blob) {
+function showExportSheet(blob, filename, tableText) {
   var url = URL.createObjectURL(blob);
+  var isImg = /^image\//.test(blob.type);
   var ov = document.createElement('div');
-  ov.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.92);overflow:auto;padding:16px;text-align:center;';
-  ov.innerHTML = '<div style="color:#fff;font-size:15px;font-weight:700;margin-bottom:10px;">กดค้างที่รูป → บันทึกรูปภาพ</div>' +
-    '<img src="' + url + '" style="max-width:100%;background:#fff;border-radius:6px;">' +
-    '<button class="btn btn-ghost mt-10" style="max-width:280px;margin:12px auto 0;">ปิด</button>';
-  ov.querySelector('button').onclick = function(){ document.body.removeChild(ov); URL.revokeObjectURL(url); };
+  ov.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center;';
+  var h = '<div class="modal-box" style="max-height:92vh;">';
+  h += '<div class="modal-title">' + (isImg ? '📄 บันทึกใบส่งของ' : '📥 ส่งออกข้อมูล') + '</div>';
+  if (isImg) h += '<div class="text-sm text-gray mb-8">กดค้างที่รูป → บันทึกรูปภาพ</div><img src="' + url + '" style="width:100%;background:#fff;border-radius:6px;margin-bottom:10px;">';
+  if (tableText) h += '<button class="btn btn-success mb-8" data-x="copy">📋 คัดลอกเป็นตาราง</button><div class="text-xs text-gray mb-10">วางใน Google Sheets / Excel ได้ทันที (แยกคอลัมน์ให้เอง)</div>';
+  h += '<a class="btn btn-primary mb-8" style="text-decoration:none;" data-x="dl" href="' + url + '" download="' + escHtml(filename) + '">📥 ดาวน์โหลดไฟล์</a>';
+  if (navigator.canShare && window.File) h += '<button class="btn btn-outline mb-8" data-x="share">📤 ส่งไฟล์ไปแอปอื่น</button>';
+  h += '<button class="btn btn-ghost" data-x="close">ปิด</button>';
+  h += '<div class="text-xs text-gray mt-10" style="word-break:break-all;opacity:.6;">' + escHtml(filename) + ' · ' + escHtml((navigator.userAgent||'').slice(0, 90)) + '</div></div>';
+  ov.innerHTML = h;
+  var close = function(){ if (ov.parentNode) document.body.removeChild(ov); setTimeout(function(){ URL.revokeObjectURL(url); }, 60000); };
+  ov.addEventListener('click', function(e){
+    var t = e.target.closest ? e.target.closest('[data-x]') : null;
+    if (e.target === ov) { close(); return; }
+    if (!t) return;
+    var x = t.getAttribute('data-x');
+    if (x === 'close') close();
+    else if (x === 'copy') copyText(tableText, function(ok){ t.textContent = ok ? '✅ คัดลอกแล้ว — ไปวางใน Google Sheets ได้เลย' : '❌ คัดลอกไม่สำเร็จ'; });
+    else if (x === 'share') {
+      try {
+        navigator.share({ files: [new File([blob], filename, { type: blob.type })], title: filename })
+          .catch(function(err){ if (!err || err.name !== 'AbortError') t.textContent = '❌ แอปนี้แชร์ไฟล์ไม่ได้ — ใช้ปุ่มอื่นแทน'; });
+      } catch(err) { t.textContent = '❌ แอปนี้แชร์ไฟล์ไม่ได้ — ใช้ปุ่มอื่นแทน'; }
+    }
+  });
   document.body.appendChild(ov);
+}
+
+function copyText(text, cb) {
+  var fallback = function(){
+    var ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;';
+    document.body.appendChild(ta); ta.select();
+    var ok = false; try { ok = document.execCommand('copy'); } catch(e) {}
+    document.body.removeChild(ta); cb(ok);
+  };
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(text).then(function(){ cb(true); }, fallback);
+  } else { fallback(); }
+}
+
+// ONE table exporter: header + rows (raw values) → CSV file + TSV for copy
+function exportTable(header, rows, filename) {
+  var all = [header].concat(rows);
+  var csv = all.map(function(r){ return r.map(function(v){
+    var t = String(v === null || v === undefined ? '' : v);
+    return /[",\r\n]/.test(t) ? '"' + t.replace(/"/g, '""') + '"' : t;
+  }).join(','); }).join('\r\n');
+  var tsv = all.map(function(r){ return r.map(function(v){
+    return String(v === null || v === undefined ? '' : v).replace(/[\t\r\n]+/g, ' ');
+  }).join('\t'); }).join('\n');
+  saveBlobAs(new Blob(['\uFEFF' + csv], {type:'text/csv'}), filename, tsv);
 }
 
 function downloadViaAnchor(blob, filename) {
@@ -2158,17 +2199,13 @@ document.addEventListener('click', function(e){
 // One CSV builder: per-branch rows (+ month total when several branches)
 function exportMonthsCSV(months, filename) {
   if (!months || !months.length) { alert('ยังไม่มีข้อมูล — รอโหลดรายงานก่อน'); return; }
-  var q = function(v){ return '"'+String(v).replace(/"/g,'""')+'"'; };
-  var rows = [['เดือน','สาขา','ออเดอร์','ชิ้น','ยอดเงิน(บาท)','ส่วนลด(บาท)'].join(',')];
+  var rows = [];
   months.forEach(function(m){
     var ids = Object.keys(m.branches);
-    ids.forEach(function(id){
-      var b = m.branches[id];
-      rows.push([m.key, q(b.name), b.orders, b.pcs, b.amount, b.disc].join(','));
-    });
-    if (ids.length > 1) rows.push([m.key, q('รวมทั้งเดือน'), m.orders, m.pcs, m.amount, m.disc].join(','));
+    ids.forEach(function(id){ var b = m.branches[id]; rows.push([m.key, b.name, b.orders, b.pcs, b.amount, b.disc]); });
+    if (ids.length > 1) rows.push([m.key, 'รวมทั้งเดือน', m.orders, m.pcs, m.amount, m.disc]);
   });
-  saveBlobAs(new Blob(['\uFEFF'+rows.join('\r\n')], {type:'text/csv'}), filename);
+  exportTable(['เดือน','สาขา','ออเดอร์','ชิ้น','ยอดเงิน(บาท)','ส่วนลด(บาท)'], rows, filename);
 }
 function exportMonthlyCSV() { exportMonthsCSV(APP.reportMonths, 'puffstick-monthly-'+getMonthKey()+'.csv'); }
 function exportBranchMonthsCSV() {
@@ -4058,25 +4095,12 @@ function saveEditOrder() {
 function exportCSV() {
   var orders=lsGet('orders')||[]; if (!Array.isArray(orders)) orders=[];
   if (!orders.length) { alert('ยังไม่มีออเดอร์'); return; }
-  var rows=[['LotNo','สาขา','วันสั่ง','วันส่ง','ชิ้นรวม','ราคา(บาท)','ปาปริก้า(ก.)','ปาปริก้าพิเศษ(กก.)','สถานะชำระ','ส่วนลด'].join(',')];
-  for (var i=0; i<orders.length; i++) {
-    var o=orders[i];
-    rows.push([
-      o.lotNo||'',
-      '"'+(o.branchName||'').replace(/"/g,'""')+'"',
-      o.orderDate||'',
-      o.deliveryDate||'',
-      o.total||0,
-      o.price||0,
-      o.paprikaG||0,
-      o.extraPapKg||0,
-      '"'+(PAY_LABELS[o.payStatus]||o.payStatus||'')+'"',
-      '"'+discLabel(orderDisc(o))+'"'
-    ].join(','));
-  }
-  var csv='\uFEFF'+rows.join('\r\n');
-  var blob=new Blob([csv],{type:'text/csv'});
-  saveBlobAs(blob, 'puffstick-orders-'+getMonthKey()+'.csv');   // v3.6.1: shared download path
+  var rows = orders.map(function(o){
+    return [o.lotNo||'', o.branchName||'', o.orderDate||'', o.deliveryDate||'', o.total||0, o.price||0,
+      o.paprikaG||0, o.extraPapKg||0, PAY_LABELS[o.payStatus]||o.payStatus||'', discLabel(orderDisc(o))];
+  });
+  exportTable(['LotNo','สาขา','วันสั่ง','วันส่ง','ชิ้นรวม','ราคา(บาท)','ปาปริก้า(ก.)','ปาปริก้าพิเศษ(กก.)','สถานะชำระ','ส่วนลด'],
+    rows, 'puffstick-orders-'+getMonthKey()+'.csv');
 }
 
 // ============================================================
