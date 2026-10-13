@@ -1669,8 +1669,10 @@ function saveBlobAs(blob, filename) {
     }
     return;
   }
-  var isMobile = /Android|iPhone|iPad|iPod/i.test(ua);
-  if (isMobile && navigator.canShare && window.File) {
+  // v3.7.1: share sheet ONLY on iOS (home-screen PWA can't download files).
+  // Android: share sheet sent the CSV into chat apps ("Can't send empty message") → download instead.
+  var isIOS = /iPhone|iPad|iPod/i.test(ua) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+  if (isIOS && navigator.canShare && window.File) {
     try {
       var file = new File([blob], filename, { type: blob.type });
       if (navigator.canShare({ files: [file] })) {
@@ -2153,27 +2155,35 @@ document.addEventListener('click', function(e){
   } else { box.style.display = 'none'; }
 });
 
-function exportMonthlyCSV() {
-  var months = APP.reportMonths;
+// One CSV builder: per-branch rows (+ month total when several branches)
+function exportMonthsCSV(months, filename) {
   if (!months || !months.length) { alert('ยังไม่มีข้อมูล — รอโหลดรายงานก่อน'); return; }
   var q = function(v){ return '"'+String(v).replace(/"/g,'""')+'"'; };
   var rows = [['เดือน','สาขา','ออเดอร์','ชิ้น','ยอดเงิน(บาท)','ส่วนลด(บาท)'].join(',')];
   months.forEach(function(m){
-    Object.keys(m.branches).forEach(function(id){
+    var ids = Object.keys(m.branches);
+    ids.forEach(function(id){
       var b = m.branches[id];
       rows.push([m.key, q(b.name), b.orders, b.pcs, b.amount, b.disc].join(','));
     });
-    rows.push([m.key, q('รวมทั้งเดือน'), m.orders, m.pcs, m.amount, m.disc].join(','));
+    if (ids.length > 1) rows.push([m.key, q('รวมทั้งเดือน'), m.orders, m.pcs, m.amount, m.disc].join(','));
   });
-  saveBlobAs(new Blob(['\uFEFF'+rows.join('\r\n')], {type:'text/csv'}), 'puffstick-monthly-'+getMonthKey()+'.csv');
+  saveBlobAs(new Blob(['\uFEFF'+rows.join('\r\n')], {type:'text/csv'}), filename);
+}
+function exportMonthlyCSV() { exportMonthsCSV(APP.reportMonths, 'puffstick-monthly-'+getMonthKey()+'.csv'); }
+function exportBranchMonthsCSV() {
+  var b = APP.branch || {};
+  exportMonthsCSV(APP.branchMonths, 'puffstick-'+String(b.name||b.id||'branch').replace(/[^a-zA-Z0-9ก-๙_-]/g,'')+'-monthly.csv');
 }
 
 // Branch history: own months (from local cache, which pullOrdersFromFirebase keeps complete)
 function renderBranchMonths(mine) {
   var el = document.getElementById('br-hist-months'); if (!el) return;
   var months = summarizeMonths(mine).slice(0, 12);
-  if (months.length < 2) { el.innerHTML = ''; return; }   // only this month → card above already shows it
-  var h = '<div class="card" style="padding:12px 14px;"><div class="card-title">📅 ยอดสั่งย้อนหลังรายเดือน</div>';
+  APP.branchMonths = months;
+  if (!months.length) { el.innerHTML = ''; return; }
+  var h = '<div class="card" style="padding:12px 14px;"><div class="flex-between mb-8"><div class="card-title" style="margin:0;">📅 ยอดสั่งย้อนหลังรายเดือน</div>' +
+    '<button class="btn btn-outline btn-sm" onclick="exportBranchMonthsCSV()">📥 CSV</button></div>';
   months.forEach(function(m){
     h += '<div class="flex-between" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;">';
     h += '<span>'+monthLabel(m.key)+'</span><span><strong>'+m.pcs.toLocaleString()+'</strong> ชิ้น · '+m.orders+' ออเดอร์ · '+m.amount.toLocaleString()+' บ.</span></div>';
