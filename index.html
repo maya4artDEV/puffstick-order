@@ -879,8 +879,8 @@ var FILLINGS = [
   {id:'choc',   name:'ช็อกโกแลต',      emoji:'🍫'}
 ];
 
-var APP_VERSION = '3.7.2';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
-var APP_BUILD   = '2026.10.14-export-sheet';  // วันที่ deploy
+var APP_VERSION = '3.7.3';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
+var APP_BUILD   = '2026.10.14-inapp-export';  // วันที่ deploy
 
 var PRICE_PER_PC = 20;
 var DISC_THRESH  = 4500;
@@ -1683,8 +1683,21 @@ function saveBlobAs(blob, filename, tableText) {
   showExportSheet(blob, filename, tableText);
 }
 
+// v3.7.3: in-app browsers / WebViews (Messenger, Facebook, LINE, home-screen shortcuts made
+// from them) cannot save files from a web page at all — measured on Tony's phone:
+// UA "Android 11; vivo 1933 ... Version/4.0" = Android WebView. Only copy works there.
+function isInAppBrowser() {
+  var ua = navigator.userAgent || '';
+  return /; wv\)|FBAN|FBAV|FB_IAB|Messenger|Instagram| Line\//i.test(ua) ||
+    (/Android/.test(ua) && /Version\/\d/.test(ua) && /Chrome\//.test(ua));
+}
+function openInChromeUrl() {
+  return 'intent://' + location.host + location.pathname + location.search + '#Intent;scheme=https;package=com.android.chrome;end';
+}
+
 function showExportSheet(blob, filename, tableText) {
   var url = URL.createObjectURL(blob);
+  var inApp = isInAppBrowser() && /Android/i.test(navigator.userAgent || '');
   var isImg = /^image\//.test(blob.type);
   var ov = document.createElement('div');
   ov.style.cssText = 'position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:flex-end;justify-content:center;';
@@ -1692,8 +1705,14 @@ function showExportSheet(blob, filename, tableText) {
   h += '<div class="modal-title">' + (isImg ? '📄 บันทึกใบส่งของ' : '📥 ส่งออกข้อมูล') + '</div>';
   if (isImg) h += '<div class="text-sm text-gray mb-8">กดค้างที่รูป → บันทึกรูปภาพ</div><img src="' + url + '" style="width:100%;background:#fff;border-radius:6px;margin-bottom:10px;">';
   if (tableText) h += '<button class="btn btn-success mb-8" data-x="copy">📋 คัดลอกเป็นตาราง</button><div class="text-xs text-gray mb-10">วางใน Google Sheets / Excel ได้ทันที (แยกคอลัมน์ให้เอง)</div>';
-  h += '<a class="btn btn-primary mb-8" style="text-decoration:none;" data-x="dl" href="' + url + '" download="' + escHtml(filename) + '">📥 ดาวน์โหลดไฟล์</a>';
-  if (navigator.canShare && window.File) h += '<button class="btn btn-outline mb-8" data-x="share">📤 ส่งไฟล์ไปแอปอื่น</button>';
+  if (inApp) {
+    // download/share are dead inside WebViews → offer Chrome instead of buttons that do nothing
+    h += '<a class="btn btn-primary mb-8" style="text-decoration:none;" href="' + openInChromeUrl() + '">🌐 เปิดใน Chrome เพื่อดาวน์โหลดไฟล์</a>';
+    h += '<div class="text-xs text-gray mb-10">แอปนี้ (เปิดผ่าน Messenger / LINE / Facebook) บันทึกไฟล์ไม่ได้ · ถ้ากดแล้วไม่ไป ให้กด ⋮ มุมขวาบน → เปิดในเบราว์เซอร์</div>';
+  } else {
+    h += '<a class="btn btn-primary mb-8" style="text-decoration:none;" data-x="dl" href="' + url + '" download="' + escHtml(filename) + '">📥 ดาวน์โหลดไฟล์</a>';
+    if (navigator.canShare && window.File) h += '<button class="btn btn-outline mb-8" data-x="share">📤 ส่งไฟล์ไปแอปอื่น</button>';
+  }
   h += '<button class="btn btn-ghost" data-x="close">ปิด</button>';
   h += '<div class="text-xs text-gray mt-10" style="word-break:break-all;opacity:.6;">' + escHtml(filename) + ' · ' + escHtml((navigator.userAgent||'').slice(0, 90)) + '</div></div>';
   ov.innerHTML = h;
