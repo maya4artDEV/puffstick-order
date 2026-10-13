@@ -485,6 +485,7 @@ textarea.form-input{resize:none;line-height:1.5}
       </div>
       <div class="prog-wrap"><div class="prog-bar" id="br-hist-bar" style="width:0%"></div></div>
     </div>
+    <div id="br-hist-months"></div>
     <div id="br-hist-list"></div>
   </div>
 </div>
@@ -578,6 +579,7 @@ textarea.form-input{resize:none;line-height:1.5}
     <div class="menu-row" onclick="openAdminTab('branches')"><div class="menu-row-text"><div class="title">🏪 จัดการสาขา</div><div class="sub">เพิ่ม/แก้ไขสาขา, PIN, เลข Lot</div></div><span class="chevron">›</span></div>
     <div class="menu-row" onclick="openAdminTab('history')"><div class="menu-row-text"><div class="title">📋 ประวัติออเดอร์</div><div class="sub">ดูออเดอร์, อัปเดตสถานะ, export CSV</div></div><span class="chevron">›</span></div>
     <div class="menu-row" onclick="openAdminTab('accum')"><div class="menu-row-text"><div class="title">🎯 ยอดสะสม &amp; ส่วนลด</div><div class="sub">ตั้งกติกาส่วนลด · ติดตามยอดสะสมแต่ละสาขา</div></div><span class="chevron">›</span></div>
+    <div class="menu-row" onclick="openAdminTab('report')"><div class="menu-row-text"><div class="title">📊 รายงานยอดรายเดือน</div><div class="sub">ยอดสั่งย้อนหลังแยกเดือน · แยกสาขา · export CSV</div></div><span class="chevron">›</span></div>
     <div class="menu-row" onclick="openAdminTab('settings')"><div class="menu-row-text"><div class="title">⚙️ ตั้งค่าระบบ</div><div class="sub">LINE, Telegram, Firebase, รหัสผ่าน</div></div><span class="chevron">›</span></div>
     <div class="menu-row" onclick="forceReload()" style="border-top:2px solid var(--border);margin-top:6px;"><div class="menu-row-text"><div class="title">🔄 อัปเดตเวอร์ชันใหม่</div><div class="sub" id="adm-version-info">เวอร์ชันปัจจุบัน · กดเพื่อโหลดของใหม่จาก server</div></div><span class="chevron">›</span></div>
   </div>
@@ -613,6 +615,16 @@ textarea.form-input{resize:none;line-height:1.5}
     </div>
     <div id="hist-list"></div>
   </div>
+</div>
+
+<!-- ADMIN: MONTHLY REPORT (v3.7.1) -->
+<div id="page-adm-report" class="page">
+  <div class="hdr">
+    <button class="btn-back" onclick="goPage('page-admin')">←</button>
+    <div class="hdr-title" style="flex:1;">📊 รายงานรายเดือน</div>
+    <button class="btn-back" style="font-size:13px;padding:6px 10px;" onclick="exportMonthlyCSV()">📥 CSV</button>
+  </div>
+  <div class="scroll-body" id="report-list"></div>
 </div>
 
 <!-- ADMIN: ACCUM -->
@@ -867,8 +879,8 @@ var FILLINGS = [
   {id:'choc',   name:'ช็อกโกแลต',      emoji:'🍫'}
 ];
 
-var APP_VERSION = '3.7.0';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
-var APP_BUILD   = '2026.10.13-discount-rule';  // วันที่ deploy
+var APP_VERSION = '3.7.1';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
+var APP_BUILD   = '2026.10.13-monthly-report';  // วันที่ deploy
 
 var PRICE_PER_PC = 20;
 var DISC_THRESH  = 4500;
@@ -1972,6 +1984,7 @@ function loadBranchHistory() {
   document.getElementById('br-hist-sub').textContent = b.name + ' · ทั้งหมด '+mine.length+' ออเดอร์';
 
   // List
+  renderBranchMonths(mine);
   var listEl = document.getElementById('br-hist-list');
   if (!mine.length) {
     listEl.innerHTML = '<div class="alert alert-info">ยังไม่มีออเดอร์ — สั่งครั้งแรกเลย!</div>';
@@ -2056,6 +2069,118 @@ function computeMonthlyAccum(branchId) {
   }
   return ba;
 }
+// ============================================================
+// v3.7.1 MONTHLY SUMMARY — single aggregator for admin report, branch history, CSV
+// Source = orders in Firebase (month from order id timestamp, Bangkok local time)
+// ============================================================
+function orderMonthKey(o) {
+  var ts = parseInt(String((o && o.id) || 'o0').slice(1), 10) || 0;
+  if (!ts) return '';
+  var d = new Date(ts);
+  return d.getFullYear() + '-' + padZ(d.getMonth()+1);
+}
+function orderDiscBaht(o) {
+  if (typeof o.discAmt === 'number') return o.discAmt;
+  return o.hasDiscount ? Math.max(0, (o.total||0)*PRICE_PER_PC - (o.price||0)) : 0;
+}
+// → [{key:'2026-10', orders, pcs, amount, disc, branches:{id:{name,orders,pcs,amount,disc}}}] newest first
+function summarizeMonths(orders) {
+  var map = {};
+  (orders || []).forEach(function(o){
+    var mk = orderMonthKey(o); if (!mk) return;
+    var m = map[mk] || (map[mk] = { key: mk, orders: 0, pcs: 0, amount: 0, disc: 0, branches: {} });
+    var amt = (o.price||0) + (o.boxPrice||0); var dsc = orderDiscBaht(o);
+    m.orders++; m.pcs += (o.total||0); m.amount += amt; m.disc += dsc;
+    var bid = o.branchId || '?';
+    var b = m.branches[bid] || (m.branches[bid] = { name: o.branchName || bid, orders: 0, pcs: 0, amount: 0, disc: 0 });
+    b.orders++; b.pcs += (o.total||0); b.amount += amt; b.disc += dsc;
+  });
+  return Object.keys(map).sort().reverse().map(function(k){ return map[k]; });
+}
+function monthLabel(mk) { var p = mk.split('-'); return thMonthName(new Date(+p[0], +p[1]-1, 1)); }
+
+// Fresh orders from Firebase (admin report must not depend on a possibly-trimmed local cache)
+function fetchAllOrders(cb) {
+  var ep = fbEndpoint('orders');
+  var fallback = function(){ var c = lsGet('orders'); cb(Array.isArray(c) ? c : [], false); };
+  if (!ep) { fallback(); return; }
+  fetch(ep, {cache:'no-store'}).then(function(r){ if (!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(function(data){ cb(data ? Object.keys(data).map(function(k){ return data[k]; }) : [], true); })
+    .catch(function(e){ console.warn('[report] fetch orders failed', e); fallback(); });
+}
+
+function loadMonthlyReport() {
+  var el = document.getElementById('report-list');
+  el.innerHTML = '<div class="alert alert-info">⏳ กำลังโหลดออเดอร์ทั้งหมดจาก cloud...</div>';
+  fetchAllOrders(function(orders, fresh){
+    APP.reportMonths = summarizeMonths(orders);
+    var h = fresh ? '' : '<div class="alert alert-warning text-sm">⚠️ ออฟไลน์ — แสดงจากข้อมูลในเครื่อง อาจไม่ครบ</div>';
+    if (!APP.reportMonths.length) { el.innerHTML = h + '<div class="alert alert-warning">ยังไม่มีออเดอร์</div>'; return; }
+    h += '<div class="text-xs text-gray mb-10">แตะเดือนเพื่อดูแยกสาขา · ยอดเงิน = ค่าขนมหลังส่วนลด + ค่ากล่อง (ก่อน VAT)</div>';
+    APP.reportMonths.forEach(function(m){
+      h += '<div class="card" data-month="'+m.key+'" style="cursor:pointer;">';
+      h += '<div class="flex-between mb-8"><span class="text-bold" style="font-size:15px;">📅 '+monthLabel(m.key)+'</span><span class="badge badge-blue">'+m.orders+' ออเดอร์</span></div>';
+      h += '<div class="sum-grid">';
+      h += '<div class="sum-item"><div class="sum-val">'+m.pcs.toLocaleString()+'</div><div class="sum-lbl">ชิ้น</div></div>';
+      h += '<div class="sum-item"><div class="sum-val">'+m.amount.toLocaleString()+'</div><div class="sum-lbl">บาท'+(m.disc ? ' · ส่วนลด '+m.disc.toLocaleString() : '')+'</div></div>';
+      h += '</div><div class="report-branches" style="display:none;margin-top:10px;"></div></div>';
+    });
+    el.innerHTML = h;
+  });
+}
+
+function renderReportBranches(m) {
+  var ids = Object.keys(m.branches).sort(function(a,b){ return m.branches[b].pcs - m.branches[a].pcs; });
+  var h = '<table style="width:100%;font-size:12px;border-collapse:collapse;">';
+  h += '<tr style="color:var(--gray);text-align:right;"><th style="text-align:left;padding:4px 0;">สาขา</th><th>ออเดอร์</th><th>ชิ้น</th><th>บาท</th></tr>';
+  ids.forEach(function(id){
+    var b = m.branches[id];
+    h += '<tr style="border-top:1px solid var(--border);text-align:right;"><td style="text-align:left;padding:5px 0;">'+escHtml(b.name)+(b.disc ? ' <span class="badge badge-gold" style="font-size:9px;">-'+b.disc.toLocaleString()+'</span>' : '')+'</td>';
+    h += '<td>'+b.orders+'</td><td>'+b.pcs.toLocaleString()+'</td><td>'+b.amount.toLocaleString()+'</td></tr>';
+  });
+  return h + '</table>';
+}
+
+// tap a month card → expand/collapse (event delegation, no inline args)
+document.addEventListener('click', function(e){
+  var card = e.target.closest ? e.target.closest('[data-month]') : null;
+  if (!card || !APP.reportMonths) return;
+  var box = card.querySelector('.report-branches');
+  if (box.style.display === 'none') {
+    var m = APP.reportMonths.filter(function(x){ return x.key === card.getAttribute('data-month'); })[0];
+    if (!m) return;
+    box.innerHTML = renderReportBranches(m); box.style.display = 'block';
+  } else { box.style.display = 'none'; }
+});
+
+function exportMonthlyCSV() {
+  var months = APP.reportMonths;
+  if (!months || !months.length) { alert('ยังไม่มีข้อมูล — รอโหลดรายงานก่อน'); return; }
+  var q = function(v){ return '"'+String(v).replace(/"/g,'""')+'"'; };
+  var rows = [['เดือน','สาขา','ออเดอร์','ชิ้น','ยอดเงิน(บาท)','ส่วนลด(บาท)'].join(',')];
+  months.forEach(function(m){
+    Object.keys(m.branches).forEach(function(id){
+      var b = m.branches[id];
+      rows.push([m.key, q(b.name), b.orders, b.pcs, b.amount, b.disc].join(','));
+    });
+    rows.push([m.key, q('รวมทั้งเดือน'), m.orders, m.pcs, m.amount, m.disc].join(','));
+  });
+  saveBlobAs(new Blob(['\uFEFF'+rows.join('\r\n')], {type:'text/csv'}), 'puffstick-monthly-'+getMonthKey()+'.csv');
+}
+
+// Branch history: own months (from local cache, which pullOrdersFromFirebase keeps complete)
+function renderBranchMonths(mine) {
+  var el = document.getElementById('br-hist-months'); if (!el) return;
+  var months = summarizeMonths(mine).slice(0, 12);
+  if (months.length < 2) { el.innerHTML = ''; return; }   // only this month → card above already shows it
+  var h = '<div class="card" style="padding:12px 14px;"><div class="card-title">📅 ยอดสั่งย้อนหลังรายเดือน</div>';
+  months.forEach(function(m){
+    h += '<div class="flex-between" style="padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;">';
+    h += '<span>'+monthLabel(m.key)+'</span><span><strong>'+m.pcs.toLocaleString()+'</strong> ชิ้น · '+m.orders+' ออเดอร์ · '+m.amount.toLocaleString()+' บ.</span></div>';
+  });
+  el.innerHTML = h + '</div>';
+}
+
 function thMonthName(d) {
   var n=['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
   return n[d.getMonth()]+' '+(d.getFullYear()+543);
@@ -3462,6 +3587,7 @@ function loadAdminDash() {
 function openAdminTab(tab) {
   if (tab==='branches') { loadBranches(); goPage('page-adm-branches'); }
   else if (tab==='history') { loadHistFilter(); loadHistory(); goPage('page-adm-history'); }
+  else if (tab==='report')  { loadMonthlyReport(); goPage('page-adm-report'); }
   else if (tab==='accum')   { loadAccumAdmin(); goPage('page-adm-accum'); pullDiscountRule(function(){ loadAccumAdmin(); }); }
   else if (tab==='settings'){ loadSettingsPage(); goPage('page-adm-settings'); }
 }
