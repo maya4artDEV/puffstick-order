@@ -577,7 +577,7 @@ textarea.form-input{resize:none;line-height:1.5}
     </div>
     <div class="menu-row" onclick="openAdminTab('branches')"><div class="menu-row-text"><div class="title">🏪 จัดการสาขา</div><div class="sub">เพิ่ม/แก้ไขสาขา, PIN, เลข Lot</div></div><span class="chevron">›</span></div>
     <div class="menu-row" onclick="openAdminTab('history')"><div class="menu-row-text"><div class="title">📋 ประวัติออเดอร์</div><div class="sub">ดูออเดอร์, อัปเดตสถานะ, export CSV</div></div><span class="chevron">›</span></div>
-    <div class="menu-row" onclick="openAdminTab('accum')"><div class="menu-row-text"><div class="title">🎯 ยอดสะสม &amp; ส่วนลด</div><div class="sub">ติดตามยอดสะสมแต่ละสาขา</div></div><span class="chevron">›</span></div>
+    <div class="menu-row" onclick="openAdminTab('accum')"><div class="menu-row-text"><div class="title">🎯 ยอดสะสม &amp; ส่วนลด</div><div class="sub">ตั้งกติกาส่วนลด · ติดตามยอดสะสมแต่ละสาขา</div></div><span class="chevron">›</span></div>
     <div class="menu-row" onclick="openAdminTab('settings')"><div class="menu-row-text"><div class="title">⚙️ ตั้งค่าระบบ</div><div class="sub">LINE, Telegram, Firebase, รหัสผ่าน</div></div><span class="chevron">›</span></div>
     <div class="menu-row" onclick="forceReload()" style="border-top:2px solid var(--border);margin-top:6px;"><div class="menu-row-text"><div class="title">🔄 อัปเดตเวอร์ชันใหม่</div><div class="sub" id="adm-version-info">เวอร์ชันปัจจุบัน · กดเพื่อโหลดของใหม่จาก server</div></div><span class="chevron">›</span></div>
   </div>
@@ -867,8 +867,8 @@ var FILLINGS = [
   {id:'choc',   name:'ช็อกโกแลต',      emoji:'🍫'}
 ];
 
-var APP_VERSION = '3.6.1';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
-var APP_BUILD   = '2026.10.10-hotfix';  // วันที่ deploy
+var APP_VERSION = '3.7.0';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
+var APP_BUILD   = '2026.10.13-discount-rule';  // วันที่ deploy
 
 var PRICE_PER_PC = 20;
 var DISC_THRESH  = 4500;
@@ -1123,6 +1123,7 @@ function initApp() {
   // Pull everything from Firebase on app load
   pullConfigFromFirebase();   // admin password, Telegram
   pullBranchesFromFirebase(); // branches / PIN
+  pullDiscountRule();         // v3.7.0: discount rule
   pullOrdersFromFirebase();   // order history
   pullMediaFromFirebase();    // QR code (for invoices)
   // Version sync — notify other devices about latest version
@@ -1467,7 +1468,7 @@ function renderInvoiceTemplate(ord) {
 
   // Compute totals
   var subtotal = items.fillingTotal + (ord.boxSmall||0)*BOX_SMALL_PRICE + (ord.boxLarge||0)*BOX_LARGE_PRICE;
-  var discountAmt = ord.hasDiscount ? Math.round(items.fillingTotal * DISC_RATE) : 0;
+  var discountAmt = discAmountFor(items.fillingTotal, orderDisc(ord));
   var afterDisc = subtotal - discountAmt;
 
   // Pay status note
@@ -1532,7 +1533,7 @@ function renderInvoiceTemplate(ord) {
   html += '    <table>';
   html += '      <tr><td class="lbl">รวมเป็นเงิน</td><td class="val">'+subtotal.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
   if (discountAmt > 0) {
-    html += '    <tr><td class="lbl">หักส่วนลด 10%</td><td class="val" style="color:#c00;">-'+discountAmt.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
+    html += '    <tr><td class="lbl">หักส่วนลด '+discLabel(orderDisc(ord))+'</td><td class="val" style="color:#c00;">-'+discountAmt.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
     html += '    <tr><td class="lbl">ยอดหลังหักส่วนลด</td><td class="val">'+afterDisc.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+'</td></tr>';
   }
   // Optional adjustment line — blank by default (was "หักเงินมัดจำ", but Tony doesn't use deposit)
@@ -1786,10 +1787,21 @@ function pullBranchesFromFirebase(cb) {
 
 // Pull with a time cap — cb fires exactly once (fresh data, or cached after timeout/offline)
 function refreshBranches(cb, timeoutMs) {
-  var done = false;
+  var done = false, pending = 2, allOk = true;
   var finish = function(ok){ if (done) return; done = true; cb(ok); };
+  var part = function(ok){ if (!ok) allOk = false; pending--; if (pending === 0) finish(allOk); };
   setTimeout(function(){ finish(false); }, timeoutMs || 5000);
-  pullBranchesFromFirebase(finish);
+  pullBranchesFromFirebase(part);
+  pullDiscountRule(part);   // v3.7.0: discount rule travels with branch data
+}
+
+// v3.7.0: discount rule from cloud. Missing node → legacy default. Offline → keep cache.
+function pullDiscountRule(cb) {
+  var ep = fbEndpoint('discount_rule');
+  if (!ep) { if (cb) cb(false); return; }
+  fetch(ep, {cache:'no-store'}).then(function(r){ if (!r.ok) throw new Error('HTTP '+r.status); return r.json(); })
+    .then(function(rule){ lsSet('disc_rule', rule || null); if (cb) cb(true); })
+    .catch(function(e){ console.warn('[FB] discount_rule pull failed', e); if (cb) cb(false); });
 }
 
 // Field-level write for ONE branch: fields = {currentLot: 5} or full branch object.
@@ -1843,9 +1855,41 @@ function calcPaprikaG(n) {
 }
 function calcBoxes(n) { return n <= 0 ? 0 : Math.ceil(n / BOX_CAP); }
 function calcDryIce(n) { return calcBoxes(n) * DRY_PER_BOX; }
-function calcPrice(total, hasDisc) {
+// ============================================================
+// v3.7.0 DISCOUNT RULE — single source of truth
+// Firebase: puffstick/discount_rule = {type:'pct'|'baht', value, minQty, ver}
+// - pct  : value % off the filling total
+// - baht : value baht off the order (capped at the filling total)
+// - reached minQty this month -> NEXT order gets it once, then count restarts
+// - no rule in Firebase -> legacy default (10% / 4,500) — nothing changes on deploy
+// Each order keeps a snapshot (ord.disc) so old invoices never change.
+// ============================================================
+var DISC_RULE_DEFAULT = { type:'pct', value: Math.round(DISC_RATE * 100), minQty: DISC_THRESH, ver: 0 };
+
+function getDiscRule() {
+  var r = lsGet('disc_rule');
+  if (!r || (r.type !== 'pct' && r.type !== 'baht') || !(r.value > 0) || !(r.minQty > 0)) return DISC_RULE_DEFAULT;
+  return r;
+}
+// Discount applied to an existing order (legacy orders = 10%)
+function orderDisc(o) {
+  if (!o || !o.hasDiscount) return null;
+  return o.disc || { type:'pct', value: Math.round(DISC_RATE * 100) };   // legacy orders
+}
+function discLabel(d) {
+  if (!d) return '';
+  return d.type === 'baht' ? (Number(d.value).toLocaleString() + ' บาท') : (d.value + '%');
+}
+function discAmountFor(base, d) {
+  if (!d || !(base > 0)) return 0;
+  if (d.type === 'baht') return Math.min(Math.round(d.value), base);
+  return Math.round(base * d.value / 100);
+}
+// disc: rule/snapshot object, or true = current rule, or falsy = none
+function calcPrice(total, disc) {
   var base = total * PRICE_PER_PC;
-  return hasDisc ? Math.round(base * (1 - DISC_RATE)) : base;
+  if (disc === true) disc = getDiscRule();
+  return base - discAmountFor(base, disc || null);
 }
 function getQty(id) { var el = document.getElementById('fq_'+id); return el ? (parseInt(el.value)||0) : 0; }
 function getExtraPap() { var el = document.getElementById('extra-pap'); return el ? (parseFloat(el.value)||0) : 0; }
@@ -1918,11 +1962,12 @@ function loadBranchHistory() {
 
   // Monthly progress
   var ba = computeMonthlyAccum(b.id);
-  var pct = Math.min(100,(ba.total/DISC_THRESH)*100);
+  var rule = getDiscRule();
+  var pct = Math.min(100,(ba.total/rule.minQty)*100);
   document.getElementById('br-hist-total').textContent = ba.total.toLocaleString()+' ชิ้น';
   var remEl = document.getElementById('br-hist-rem');
-  if (ba.discountAvailable) { remEl.innerHTML='<span style="color:var(--green);">💰 ได้ส่วนลด 10%</span>'; }
-  else { remEl.textContent = 'เหลืออีก '+(DISC_THRESH-ba.total).toLocaleString()+' ชิ้น'; }
+  if (ba.discountAvailable) { remEl.innerHTML='<span style="color:var(--green);">💰 ได้ส่วนลด '+escHtml(discLabel(rule))+'</span>'; }
+  else { remEl.textContent = 'เหลืออีก '+(rule.minQty-ba.total).toLocaleString()+' ชิ้น'; }
   document.getElementById('br-hist-bar').style.width = pct.toFixed(1)+'%';
   document.getElementById('br-hist-sub').textContent = b.name + ' · ทั้งหมด '+mine.length+' ออเดอร์';
 
@@ -1996,6 +2041,7 @@ function computeMonthlyAccum(branchId) {
     var tb = parseInt(String(b.id||'o0').slice(1), 10) || 0;
     return ta - tb;
   });
+  var thresh = getDiscRule().minQty;
   var ba = { total: 0, discountAvailable: false };
   for (var i = 0; i < bOrders.length; i++) {
     var o = bOrders[i];
@@ -2006,7 +2052,7 @@ function computeMonthlyAccum(branchId) {
     if (omk !== mk) continue;
     if (o.hasDiscount) { ba.discountAvailable = false; ba.total = o.total || 0; }
     else { ba.total += (o.total || 0); }
-    if (ba.total >= DISC_THRESH && !ba.discountAvailable) { ba.discountAvailable = true; }
+    if (ba.total >= thresh && !ba.discountAvailable) { ba.discountAvailable = true; }
   }
   return ba;
 }
@@ -2050,6 +2096,7 @@ function loginWithPin(pin) {
   APP.branch = found; APP.payStatus = 'pending'; APP.order = null;
   logBranchLogin(found);
   initOrderPage(); goPage('page-order');
+  maybeShowRuleNotice();
 }
 
 // v3.6.1 (T8): login audit — lets admin see one device entering several branches
@@ -2300,17 +2347,26 @@ function checkDate() {
 
 function loadAccumBar() {
   var ba=computeMonthlyAccum(APP.branch.id);
-  var pct=Math.min(100,(ba.total/DISC_THRESH)*100);
+  var rule=getDiscRule(); var lbl=discLabel(rule);
+  // branch not in the discount program → hide the progress UI (history button stays)
+  var off = (APP.branch.discountEnabled === false);
+  document.getElementById('accum-bar').parentNode.style.display = off ? 'none' : '';
+  document.getElementById('accum-txt').parentNode.style.display = off ? 'none' : '';
+  document.getElementById('accum-note').style.display = off ? 'none' : '';
+  if (off) return;
+  var pct=Math.min(100,(ba.total/rule.minQty)*100);
   document.getElementById('accum-bar').style.width=pct+'%';
-  document.getElementById('accum-txt').textContent=ba.total.toLocaleString()+' / '+DISC_THRESH.toLocaleString()+' ชิ้น';
+  document.getElementById('accum-txt').textContent=ba.total.toLocaleString()+' / '+rule.minQty.toLocaleString()+' ชิ้น';
   var noteEl=document.getElementById('accum-note');
-  if (ba.discountAvailable) { noteEl.textContent='🎉 ได้สิทธิ์ส่วนลด 10% ลอตถัดไป!'; noteEl.style.color='var(--green)'; noteEl.style.fontWeight='700'; }
-  else { noteEl.textContent='สะสมครบ 4,500 ชิ้น รับส่วนลด 10% ลอตถัดไป'; noteEl.style.color=''; noteEl.style.fontWeight=''; }
+  if (ba.discountAvailable) { noteEl.textContent='🎉 ออเดอร์ถัดไปได้ส่วนลด '+lbl+'!'; noteEl.style.color='var(--green)'; noteEl.style.fontWeight='700'; }
+  else { noteEl.textContent='อีก '+(rule.minQty-ba.total).toLocaleString()+' ชิ้น รับส่วนลด '+lbl+' ออเดอร์ถัดไป'; noteEl.style.color=''; noteEl.style.fontWeight=''; }
 }
 
 function checkDiscBadge() {
   var ba=computeMonthlyAccum(APP.branch.id);
-  document.getElementById('o-disc-badge').style.display=ba.discountAvailable?'block':'none';
+  var badge=document.getElementById('o-disc-badge');
+  badge.innerHTML='<span class="badge badge-gold">💰 ส่วนลด '+escHtml(discLabel(getDiscRule()))+'</span>';
+  badge.style.display=ba.discountAvailable?'block':'none';
 }
 
 function selPay(status) {
@@ -2349,7 +2405,10 @@ function showPreview() {
     buildOrderText();
     var ba=computeMonthlyAccum(APP.branch.id);
     var discBanner = document.getElementById('preview-disc-banner');
-    if (discBanner) discBanner.style.display=ba.discountAvailable?'block':'none';
+    if (discBanner) {
+      discBanner.textContent = '🎉 ออเดอร์นี้ได้รับส่วนลด '+discLabel(getDiscRule())+'!';
+      discBanner.style.display=ba.discountAvailable?'block':'none';
+    }
     goPage('page-preview');
   } catch(e) {
     console.error('[doPreview] Error:', e);
@@ -2366,14 +2425,16 @@ function buildOrderText() {
   var lotNo=b.currentLot||1;
   var ba=computeMonthlyAccum(b.id);
   var hasDisc=ba.discountAvailable;
+  var rule=getDiscRule();
+  var disc=hasDisc ? { type:rule.type, value:rule.value, minQty:rule.minQty, ver:rule.ver } : null;
   var total=calcTotal(); var papG=calcPaprikaG(total); var extraPap=getExtraPap();
-  var price=calcPrice(total, hasDisc);
+  var price=calcPrice(total, disc);
   var notes=document.getElementById('o-notes').value.trim();
 
   var lines=[];
   lines.push('สาขา '+b.name);
   lines.push('#'+lotNo+'  Date '+todayStr);
-  if (hasDisc) { lines.push('🎉 [ออเดอร์ส่วนลด 10%]'); }
+  if (hasDisc) { lines.push('🎉 [ออเดอร์ส่วนลด '+discLabel(disc)+']'); }
   lines.push('');
 
   var locs = APP.locations;
@@ -2421,7 +2482,7 @@ function buildOrderText() {
 
   lines.push('');
   lines.push('ยอดรวม  '+price.toLocaleString()+' บาท (ยังไม่รวม VAT)');
-  if (hasDisc) { lines.push('(ราคารวมส่วนลด 10% แล้ว)'); }
+  if (hasDisc) { lines.push('(หักส่วนลด '+discLabel(disc)+' แล้ว = -'+(total*PRICE_PER_PC-price).toLocaleString()+' บาท)'); }
   if (boxPrice > 0) {
     var grand = price + boxPrice;
     lines.push('+ ค่ากล่อง  '+boxPrice.toLocaleString()+' บาท');
@@ -2450,7 +2511,7 @@ function buildOrderText() {
     locations: locs.map(function(l){ return {name:l.name, fillings:l.fillings}; }),
     total:total, paprikaG:papG, extraPapKg:extraPap,
     boxSmall:boxSm, boxLarge:boxLg, boxPrice:boxPrice,
-    hasDiscount:hasDisc, price:price, payStatus:APP.payStatus,
+    hasDiscount:hasDisc, disc:disc, discAmt:(total*PRICE_PER_PC-price), price:price, payStatus:APP.payStatus,
     notes:notes, text:txt, ts:Date.now()
   };
 }
@@ -2511,11 +2572,12 @@ function doConfirmOrder() {
   // v3.6.1: re-check discount + lot against cloud right before saving
   refreshBranches(function(){
     var ba = computeMonthlyAccum(ord.branchId);
-    if (ba.discountAvailable !== !!ord.hasDiscount || (APP.branch.currentLot||1) !== ord.lotNo) {
+    var ruleChanged = ord.disc && ord.disc.ver !== getDiscRule().ver;
+    if (ba.discountAvailable !== !!ord.hasDiscount || ruleChanged || (APP.branch.currentLot||1) !== ord.lotNo) {
       APP.confirming = false;
       buildOrderText();
       var db = document.getElementById('preview-disc-banner');
-      if (db) db.style.display = ba.discountAvailable ? 'block' : 'none';
+      if (db) { db.textContent = '🎉 ออเดอร์นี้ได้รับส่วนลด '+discLabel(getDiscRule())+'!'; db.style.display = ba.discountAvailable ? 'block' : 'none'; }
       alert('ℹ️ ข้อมูลส่วนลด/เลข Lot อัปเดตจากระบบแล้ว\nกรุณาตรวจออเดอร์อีกครั้งแล้วกดยืนยัน');
       return;
     }
@@ -2595,7 +2657,9 @@ function confirmOrderNow(ord) {
 
   document.getElementById('suc-lot').textContent='Lot #'+ord.lotNo+' · รวม '+ord.total.toLocaleString()+' ชิ้น';
   document.getElementById('suc-detail').textContent='กำหนดส่ง '+ord.deliveryDate+' · '+ord.price.toLocaleString()+' บาท';
-  document.getElementById('suc-disc').style.display=newReach?'block':'none';
+  var sucDisc=document.getElementById('suc-disc');
+  sucDisc.innerHTML='🌟 ยอดสะสมผ่าน '+getDiscRule().minQty.toLocaleString()+' ชิ้นแล้ว!<br>ออเดอร์ถัดไปได้ส่วนลด '+escHtml(discLabel(getDiscRule()));
+  sucDisc.style.display=newReach?'block':'none';
 
   goPage('page-success');
   APP.confirming = false;
@@ -3398,7 +3462,7 @@ function loadAdminDash() {
 function openAdminTab(tab) {
   if (tab==='branches') { loadBranches(); goPage('page-adm-branches'); }
   else if (tab==='history') { loadHistFilter(); loadHistory(); goPage('page-adm-history'); }
-  else if (tab==='accum')   { loadAccumAdmin(); goPage('page-adm-accum'); }
+  else if (tab==='accum')   { loadAccumAdmin(); goPage('page-adm-accum'); pullDiscountRule(function(){ loadAccumAdmin(); }); }
   else if (tab==='settings'){ loadSettingsPage(); goPage('page-adm-settings'); }
 }
 
@@ -3556,8 +3620,9 @@ function toggleBranchDiscount(id) {
   var currentOn = (bs[id].discountEnabled !== false);
   var newState = !currentOn;
   var action = newState ? 'เปิด' : 'ปิด';
-  if (!confirm(action+'ส่วนลด 10% สำหรับสาขา "'+bs[id].name+'"?\n\n'+(newState
-    ? '✓ สาขาจะเริ่มสะสมยอด + ได้ส่วนลด 10% เมื่อครบ 4,500 ชิ้น'
+  var rl = getDiscRule();
+  if (!confirm(action+'ส่วนลดสำหรับสาขา "'+bs[id].name+'"?\n\n'+(newState
+    ? '✓ สาขาจะเริ่มสะสมยอด + ได้ส่วนลด '+discLabel(rl)+' เมื่อครบ '+rl.minQty.toLocaleString()+' ชิ้น'
     : '✗ สาขาจะไม่สะสมยอด + ไม่ได้รับส่วนลด'))) return;
   bs[id].discountEnabled = newState;
   lsSet('branches', bs);
@@ -3747,7 +3812,7 @@ function calcEditSummary() {
   var orders = lsGet('orders')||[]; var o = null;
   for (var i=0; i<orders.length; i++) { if(orders[i].id===APP.viewOrdId){o=orders[i];break;} }
   var hasDisc = o ? !!o.hasDiscount : false;
-  var price = calcPrice(total, hasDisc);
+  var price = calcPrice(total, orderDisc(o));
   var papG  = calcPaprikaG(total);
 
   // Box price
@@ -3760,7 +3825,7 @@ function calcEditSummary() {
   var boxPrice = boxSm * BOX_SMALL_PRICE + boxLg * BOX_LARGE_PRICE;
 
   document.getElementById('edit-ord-total').textContent = total.toLocaleString() + ' ชิ้น';
-  document.getElementById('edit-ord-price').textContent = price.toLocaleString() + ' บาท' + (hasDisc ? ' (รวมส่วนลด 10%)' : '');
+  document.getElementById('edit-ord-price').textContent = price.toLocaleString() + ' บาท' + (hasDisc ? ' (รวมส่วนลด '+discLabel(orderDisc(o))+')' : '');
   document.getElementById('edit-ord-pap').textContent   = papG > 0 ? (papG/1000).toFixed(1) + ' กก.' : '0 กก.';
   var bpEl = document.getElementById('edit-ord-boxprice');
   if (bpEl) bpEl.textContent = boxPrice.toLocaleString() + ' บาท';
@@ -3784,7 +3849,7 @@ function saveEditOrder() {
   if (total === 0) { alert('จำนวนรวมต้องมากกว่า 0 ชิ้น'); return; }
 
   var hasDisc = !!o.hasDiscount;
-  var price   = calcPrice(total, hasDisc);
+  var price   = calcPrice(total, orderDisc(o));
   var papG    = calcPaprikaG(total);
 
   // Box quantities
@@ -3796,7 +3861,7 @@ function saveEditOrder() {
   var lines = [];
   lines.push('สาขา ' + o.branchName);
   lines.push('#' + o.lotNo + '  Date ' + o.orderDate);
-  if (hasDisc) lines.push('🎉 [ออเดอร์ส่วนลด 10%]');
+  if (hasDisc) lines.push('🎉 [ออเดอร์ส่วนลด '+discLabel(orderDisc(o))+']');
   lines.push('');
   for (var k=0; k<FILLINGS.length; k++) {
     var f = FILLINGS[k]; var q = newFills[f.id]||0;
@@ -3814,7 +3879,7 @@ function saveEditOrder() {
   }
   lines.push('');
   lines.push('ยอดรวม  ' + price.toLocaleString() + ' บาท (ยังไม่รวม VAT)');
-  if (hasDisc) lines.push('(ราคารวมส่วนลด 10% แล้ว)');
+  if (hasDisc) lines.push('(หักส่วนลด '+discLabel(orderDisc(o))+' แล้ว = -'+(total*PRICE_PER_PC-price).toLocaleString()+' บาท)');
   if (boxPrice > 0) {
     lines.push('+ ค่ากล่อง  '+boxPrice.toLocaleString()+' บาท');
     lines.push('= ยอดรวมทั้งหมด  '+(price+boxPrice).toLocaleString()+' บาท');
@@ -3831,6 +3896,7 @@ function saveEditOrder() {
   orders[idx].fillings    = newFills;
   orders[idx].total       = total;
   orders[idx].price       = price;
+  if (orders[idx].hasDiscount) orders[idx].discAmt = total*PRICE_PER_PC - price;
   orders[idx].paprikaG    = papG;
   orders[idx].boxSmall    = boxSm;
   orders[idx].boxLarge    = boxLg;
@@ -3869,7 +3935,7 @@ function exportCSV() {
       o.paprikaG||0,
       o.extraPapKg||0,
       '"'+(PAY_LABELS[o.payStatus]||o.payStatus||'')+'"',
-      o.hasDiscount?'10%':''
+      '"'+discLabel(orderDisc(o))+'"'
     ].join(','));
   }
   var csv='\uFEFF'+rows.join('\r\n');
@@ -3882,26 +3948,121 @@ function exportCSV() {
 // ============================================================
 function loadAccumAdmin() {
   var bs=lsGet('branches')||{};
-  var html='<div class="alert alert-info text-sm mb-10">ยอดสะสมประจำเดือน <strong>'+thMonthName(new Date())+'</strong></div>';
+  var rule=getDiscRule();
+  var html=renderDiscRuleCard(rule);
+  html+='<div class="alert alert-info text-sm mb-10">ยอดสะสมประจำเดือน <strong>'+thMonthName(new Date())+'</strong></div>';
   var keys=Object.keys(bs);
   if (!keys.length) { html+='<div class="alert alert-warning">ยังไม่มีสาขา</div>'; }
   else {
     for (var i=0; i<keys.length; i++) {
       var id=keys[i]; var b=bs[id]; var ba=computeMonthlyAccum(id);
-      var pct=Math.min(100,(ba.total/DISC_THRESH)*100);
+      var pct=Math.min(100,(ba.total/rule.minQty)*100);
       html+='<div class="card">';
       html+='<div class="flex-between mb-8">';
       html+='<span class="text-bold">'+b.name+'</span>';
       if (ba.discountAvailable) { html+='<span class="badge badge-gold">💰 มีสิทธิ์ส่วนลด</span>'; }
       html+='</div>';
       html+='<div class="flex-between text-sm mb-8"><span class="text-gray">ยอดสะสม</span>';
-      html+='<span class="text-bold text-brown">'+ba.total.toLocaleString()+' / '+DISC_THRESH.toLocaleString()+' ชิ้น</span></div>';
+      html+='<span class="text-bold text-brown">'+ba.total.toLocaleString()+' / '+rule.minQty.toLocaleString()+' ชิ้น</span></div>';
       html+='<div class="prog-wrap"><div class="prog-bar" style="width:'+pct.toFixed(1)+'%"></div></div>';
-      if (!ba.discountAvailable) { html+='<div class="text-xs text-gray mt-8">เหลืออีก '+(DISC_THRESH-ba.total).toLocaleString()+' ชิ้น</div>'; }
+      if (!ba.discountAvailable) { html+='<div class="text-xs text-gray mt-8">เหลืออีก '+(rule.minQty-ba.total).toLocaleString()+' ชิ้น</div>'; }
       html+='</div>';
     }
   }
   document.getElementById('accum-list-adm').innerHTML=html;
+  loadRuleAcks(rule);
+}
+
+// ---------- v3.7.0 ADMIN: discount rule editor ----------
+function renderDiscRuleCard(rule) {
+  var setAt = rule.ver ? new Date(rule.ver).toLocaleString('th-TH') : '';
+  var h = '<div class="card" style="border:2px solid var(--gold);">';
+  h += '<div class="card-title">💰 กติกาส่วนลด (ใช้ทุกสาขาที่เปิดส่วนลด)</div>';
+  h += '<div class="alert alert-success text-sm mb-10">ตอนนี้: สะสมครบ <strong>'+rule.minQty.toLocaleString()+' ชิ้น/เดือน</strong> → ออเดอร์ถัดไปลด <strong>'+escHtml(discLabel(rule))+'</strong>';
+  h += rule.ver ? '<br><span class="text-xs">ตั้งเมื่อ '+escHtml(setAt)+'</span>' : '<br><span class="text-xs">(ค่าเริ่มต้นระบบ — ยังไม่เคยตั้ง)</span>';
+  h += '</div>';
+  h += '<div class="form-group"><label class="form-label">ประเภทส่วนลด</label><select class="form-input" id="dr-type">';
+  h += '<option value="pct"'+(rule.type==='pct'?' selected':'')+'>เปอร์เซ็นต์ (%) ของค่าขนม</option>';
+  h += '<option value="baht"'+(rule.type==='baht'?' selected':'')+'>จำนวนเงิน (บาท) ต่อออเดอร์</option></select></div>';
+  h += '<div class="form-group"><label class="form-label">มูลค่าส่วนลด (% หรือ บาท)</label><input class="form-input" type="number" inputmode="decimal" min="0" id="dr-value" value="'+rule.value+'"></div>';
+  h += '<div class="form-group"><label class="form-label">ต้องสะสมถึง (ชิ้น/เดือน)</label><input class="form-input" type="number" inputmode="numeric" min="1" id="dr-min" value="'+rule.minQty+'"></div>';
+  h += '<div class="form-group"><label class="form-label">ข้อความถึงสาขา (ไม่บังคับ)</label><input class="form-input" type="text" maxlength="200" id="dr-note" value="'+escHtml(rule.note||'')+'" placeholder="เช่น เริ่มใช้ตั้งแต่วันนี้"></div>';
+  h += '<button class="btn btn-primary" onclick="saveDiscRule()">💾 บันทึก + แจ้งทุกสาขา</button>';
+  h += '<div id="dr-acks" class="text-sm text-gray mt-10"></div>';
+  h += '</div>';
+  return h;
+}
+
+function saveDiscRule() {
+  var type = document.getElementById('dr-type').value;
+  var value = parseFloat(document.getElementById('dr-value').value);
+  var minQty = parseInt(document.getElementById('dr-min').value, 10);
+  var note = document.getElementById('dr-note').value.trim();
+  if (!(value > 0)) { alert('กรุณาใส่มูลค่าส่วนลดมากกว่า 0'); return; }
+  if (type === 'pct' && value > 100) { alert('ส่วนลดเปอร์เซ็นต์ต้องไม่เกิน 100'); return; }
+  if (type === 'baht') value = Math.round(value);
+  if (!(minQty > 0)) { alert('กรุณาใส่จำนวนชิ้นที่ต้องสะสม'); return; }
+  var rule = { type:type, value:value, minQty:minQty, note:note, ver:Date.now() };
+  if (!confirm('บันทึกกติกาใหม่?\n\nสะสมครบ '+minQty.toLocaleString()+' ชิ้น/เดือน → ออเดอร์ถัดไปลด '+discLabel(rule)+
+    '\n\n• ยอดสะสมเดือนนี้นับตามเป้าใหม่ทันที\n• ใบส่งของเก่าไม่เปลี่ยน\n• ทุกสาขาจะเห็นแจ้งเตือนในแอป')) return;
+  var ep = fbEndpoint('discount_rule');
+  if (!ep) { alert('ยังไม่ได้ตั้งค่า Firebase'); return; }
+  fetch(ep, { method:'PUT', headers:{'Content-Type':'application/json'}, body: JSON.stringify(rule) })
+    .then(function(r){
+      if (!r.ok) { alert('❌ บันทึกไม่สำเร็จ (HTTP '+r.status+')'); return; }
+      lsSet('disc_rule', rule);
+      alert('✅ บันทึกกติกาส่วนลดแล้ว — สาขาจะเห็นแจ้งเตือนเมื่อเปิด/กลับเข้าแอป');
+      loadAccumAdmin();
+    })
+    .catch(function(e){ alert('❌ บันทึกไม่สำเร็จ: '+(e.message||e)); });
+}
+
+// Who has acknowledged the current rule
+function loadRuleAcks(rule) {
+  var el = document.getElementById('dr-acks');
+  if (!el || !rule.ver) return;
+  var ep = fbEndpoint('branch_health/rule_acks/'+rule.ver);
+  if (!ep) return;
+  el.textContent = '⏳ กำลังโหลดสถานะการรับทราบ...';
+  fetch(ep, {cache:'no-store'}).then(function(r){ return r.ok ? r.json() : null; }).then(function(acks){
+    acks = acks || {};
+    var bs = lsGet('branches') || {};
+    var on = Object.keys(bs).filter(function(id){ return bs[id].discountEnabled !== false; });
+    var pending = on.filter(function(id){ return !acks[id]; });
+    var h = '📢 รับทราบแล้ว <strong>'+(on.length-pending.length)+' / '+on.length+'</strong> สาขา';
+    if (pending.length) h += '<br>ยังไม่เห็น: '+pending.map(function(id){ return escHtml(bs[id].name); }).join(', ');
+    el.innerHTML = h;
+  }).catch(function(){ el.textContent = '⚠️ โหลดสถานะการรับทราบไม่สำเร็จ'; });
+}
+
+// ---------- v3.7.0 BRANCH: in-app notice when the rule changes ----------
+function maybeShowRuleNotice() {
+  var b = APP.branch; var rule = getDiscRule();
+  if (!b || !rule.ver || b.discountEnabled === false) return;
+  var seen = lsGet('disc_rule_seen') || {};
+  if (seen[b.id] >= rule.ver || document.getElementById('rule-notice')) return;
+  var ba = computeMonthlyAccum(b.id);
+  var progress = ba.discountAvailable
+    ? '🎉 ตอนนี้ออเดอร์ถัดไปของคุณได้ส่วนลดแล้ว!'
+    : 'เดือนนี้สะสมแล้ว '+ba.total.toLocaleString()+' ชิ้น · อีก '+(rule.minQty-ba.total).toLocaleString()+' ชิ้น';
+  var ov = document.createElement('div');
+  ov.id = 'rule-notice';
+  ov.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center;padding:20px;';
+  ov.innerHTML = '<div class="card" style="max-width:360px;width:100%;margin:0;text-align:center;">' +
+    '<div style="font-size:34px;">📢</div>' +
+    '<div style="font-size:17px;font-weight:800;color:var(--brown);margin:6px 0 10px;">เงื่อนไขส่วนลดใหม่</div>' +
+    '<div class="disc-banner">สะสมครบ '+rule.minQty.toLocaleString()+' ชิ้น/เดือน<br>ออเดอร์ถัดไปลด '+escHtml(discLabel(rule))+'</div>' +
+    (rule.note ? '<div class="text-sm mb-10">'+escHtml(rule.note)+'</div>' : '') +
+    '<div class="text-sm text-gray mb-10">'+escHtml(progress)+'</div>' +
+    '<button class="btn btn-primary">รับทราบ</button></div>';
+  ov.querySelector('button').onclick = function(){
+    seen[b.id] = rule.ver; lsSet('disc_rule_seen', seen);
+    var ep = fbEndpoint('branch_health/rule_acks/'+rule.ver+'/'+b.id);
+    if (ep) fetch(ep, { method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ ts: Date.now(), deviceId: getOrCreateDeviceId() }) }).catch(function(){});
+    document.body.removeChild(ov);
+  };
+  document.body.appendChild(ov);
 }
 
 // ============================================================
@@ -4117,10 +4278,11 @@ document.addEventListener('visibilitychange', function(){
   if (document.visibilityState !== 'visible' || !APP.branch) return;
   var op = document.getElementById('page-order');
   if (!op || !op.classList.contains('active')) return;
-  pullBranchesFromFirebase(function(){
+  refreshBranches(function(){
     loadAccumBar(); checkDiscBadge(); updateSummary();
     document.getElementById('o-lot-info').textContent = 'Lot #'+(APP.branch.currentLot||1)+' · '+toThaiDate(new Date());
-  });
+    maybeShowRuleNotice();
+  }, 5000);
 });
 </script>
 </body>
