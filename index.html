@@ -281,7 +281,7 @@ textarea.form-input{resize:none;line-height:1.5}
     </div>
 
     <div class="land-cta-row">
-      <button class="land-cta land-cta-primary" onclick="goPage('page-branch-login')">🏪 สาขาแฟรนไชส์ — สั่งขนม</button>
+      <button class="land-cta land-cta-primary" onclick="openBranchLogin()">🏪 สาขาแฟรนไชส์ — สั่งขนม</button>
       <button class="land-cta land-cta-ghost" onclick="goPage('page-admin-login')">🔐 แอดมิน — จัดการระบบ</button>
     </div>
 
@@ -293,12 +293,13 @@ textarea.form-input{resize:none;line-height:1.5}
 <div id="page-branch-login" class="page">
   <div class="hdr">
     <button class="btn-back" onclick="goPage('page-landing')">←</button>
-    <div><div class="hdr-title">เข้าสู่ระบบสาขา</div><div class="hdr-sub">กรอก PIN 4 หลักของสาขา</div></div>
+    <div><div class="hdr-title">เข้าสู่ระบบสาขา</div><div class="hdr-sub">เลือกสาขา แล้วกรอก PIN 4 หลัก</div></div>
   </div>
   <div class="content">
     <div class="card">
       <div class="card-title">🔑 PIN สาขา</div>
       <div id="bl-error" class="alert alert-danger" style="display:none;"></div>
+      <div class="form-group"><label class="form-label">สาขา</label><select class="form-input" id="bl-branch"><option value="">— เลือกสาขา —</option></select></div>
       <div class="pin-row">
         <input class="pin-digit" type="number" inputmode="numeric" id="p0" maxlength="1" oninput="pinStep(this,0)">
         <input class="pin-digit" type="number" inputmode="numeric" id="p1" maxlength="1" oninput="pinStep(this,1)">
@@ -695,11 +696,9 @@ textarea.form-input{resize:none;line-height:1.5}
       <div class="alert alert-success text-sm">✅ พร้อมใช้งานทันที — กดปุ่ม "แชร์ผ่าน LINE" ในหน้า Preview<br>LINE จะเปิดขึ้นพร้อมข้อความ พร้อมเลือกห้องส่งได้เลย ทั้ง iOS &amp; Android</div>
     </div>
     <div class="card">
-      <div class="card-title">✈️ Telegram Bot (สำรอง)</div>
-      <div class="form-group"><label class="form-label">Bot Token</label><input type="text" class="form-input" id="cfg-tg-token" placeholder="123456:ABCdef..."></div>
-      <div class="form-group"><label class="form-label">Chat ID</label><input type="text" class="form-input" id="cfg-tg-chat" placeholder="-1001234567890"></div>
-      <button class="btn btn-primary mb-8" onclick="saveTgSettings()">บันทึก Telegram</button>
-      <button class="btn btn-ghost btn-sm" onclick="testTelegram()">ทดสอบส่ง</button>
+      <div class="card-title">✈️ Telegram</div>
+      <div class="alert alert-info text-sm mb-10">ส่งผ่าน Cloudflare Worker — Bot Token เก็บใน Worker secrets เท่านั้น (ไม่อยู่ในแอป/Firebase)<br>เปลี่ยน token: Cloudflare → Worker → Settings → Variables → TELEGRAM_BOT_TOKEN</div>
+      <button class="btn btn-ghost btn-sm" onclick="testWorker()">ทดสอบการเชื่อมต่อ Worker</button>
     </div>
     <div class="card">
       <div class="card-title">🔥 Firebase Realtime Database</div>
@@ -879,8 +878,8 @@ var FILLINGS = [
   {id:'choc',   name:'ช็อกโกแลต',      emoji:'🍫'}
 ];
 
-var APP_VERSION = '3.7.3';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
-var APP_BUILD   = '2026.10.14-inapp-export';  // วันที่ deploy
+var APP_VERSION = '3.8.0';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
+var APP_BUILD   = '2026.10.14-hardening';  // วันที่ deploy
 
 var PRICE_PER_PC = 20;
 var DISC_THRESH  = 4500;
@@ -1133,7 +1132,8 @@ function initApp() {
   applyCustomImages();
 
   // Pull everything from Firebase on app load
-  pullConfigFromFirebase();   // admin password, Telegram
+  purgeLegacyTelegramSecrets(false);
+  pullConfigFromFirebase();   // admin password
   pullBranchesFromFirebase(); // branches / PIN
   pullDiscountRule();         // v3.7.0: discount rule
   pullOrdersFromFirebase();   // order history
@@ -2275,27 +2275,68 @@ function doLoginBranch() {
   refreshBranches(function(){ APP.loggingIn = false; loginWithPin(pin); }, 5000);
 }
 
+// v3.8.0 (T7): branch picker — device remembers its branch, so after the first time it's PIN-only as before
+function openBranchLogin() {
+  fillBranchPicker();
+  goPage('page-branch-login');
+  pullBranchesFromFirebase(function(){ fillBranchPicker(); });
+}
+function fillBranchPicker() {
+  var sel = document.getElementById('bl-branch'); if (!sel) return;
+  var bs = lsGet('branches') || {};
+  var cur = sel.value || lsGet('last_branch') || '';
+  var ids = Object.keys(bs).sort(function(a,b){ return String(bs[a].name).localeCompare(String(bs[b].name), 'th'); });
+  var h = '<option value="">— เลือกสาขา —</option>';
+  ids.forEach(function(id){ h += '<option value="'+escHtml(id)+'"'+(id===cur?' selected':'')+'>'+escHtml(bs[id].name)+'</option>'; });
+  sel.innerHTML = h;
+}
+
+// PIN lockout: 5 wrong PINs → 5 minutes (per device)
+var PIN_MAX_FAILS = 5, PIN_LOCK_MS = 5*60*1000;
+function pinLockedMsg() {
+  var f = lsGet('pin_fail') || {};
+  if (f.until && f.until > Date.now()) return 'กรอก PIN ผิดหลายครั้ง — ลองใหม่ใน ' + Math.ceil((f.until-Date.now())/60000) + ' นาที';
+  return '';
+}
+function recordPinFail(branchId) {
+  var f = lsGet('pin_fail') || {};
+  f.n = (f.n || 0) + 1;
+  if (f.n >= PIN_MAX_FAILS) { f.until = Date.now() + PIN_LOCK_MS; f.n = 0; }
+  lsSet('pin_fail', f);
+  logBranchLogin({ id: branchId, name: '' }, false);
+}
+
 function loginWithPin(pin) {
   var bs = lsGet('branches') || {};
-  var found = null;
-  var keys = Object.keys(bs);
-  for (var k = 0; k < keys.length; k++) {
-    if (bs[keys[k]].pin === pin) { found = {id:keys[k]}; var bObj = bs[keys[k]]; for (var p in bObj) found[p] = bObj[p]; break; }
+  var lockMsg = pinLockedMsg();
+  if (lockMsg) { showErr('bl-error', lockMsg); clearPinInputs(); return; }
+  var sel = document.getElementById('bl-branch');
+  var bid = sel ? sel.value : '';
+  if (!bid || !bs[bid]) { showErr('bl-error','กรุณาเลือกสาขาก่อน'); return; }
+  if (bs[bid].pin !== pin) {
+    recordPinFail(bid); clearPinInputs();
+    showErr('bl-error', pinLockedMsg() || 'PIN ไม่ถูกต้อง');
+    return;
   }
-  if (!found) { showErr('bl-error','PIN ไม่ถูกต้อง'); return; }
-  for (var j = 0; j < 4; j++) { var pe=document.getElementById('p'+j); if(pe) pe.value=''; }
+  lsSet('pin_fail', {});
+  lsSet('last_branch', bid);
+  var found = {id: bid}; var bObj = bs[bid]; for (var p in bObj) found[p] = bObj[p];
+  clearPinInputs();
   APP.branch = found; APP.payStatus = 'pending'; APP.order = null;
   logBranchLogin(found);
   initOrderPage(); goPage('page-order');
   maybeShowRuleNotice();
 }
 
+function clearPinInputs() { for (var j = 0; j < 4; j++) { var pe=document.getElementById('p'+j); if(pe) pe.value=''; } }
+
 // v3.6.1 (T8): login audit — lets admin see one device entering several branches
-function logBranchLogin(b) {
+// v3.8.0: ok=false records a wrong-PIN attempt
+function logBranchLogin(b, ok) {
   var ep = fbEndpoint('branch_health/logins');
   if (!ep) return;
   fetch(ep, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({
-    ts: Date.now(), deviceId: getOrCreateDeviceId(), branchId: b.id, branchName: b.name, appVersion: APP_VERSION
+    ts: Date.now(), deviceId: getOrCreateDeviceId(), branchId: b.id, branchName: b.name, appVersion: APP_VERSION, ok: ok !== false
   })}).catch(function(){});
 }
 
@@ -2726,20 +2767,6 @@ function doShareLine() {
   window.open('https://line.me/R/share?text='+encodeURIComponent(txt), '_blank');
 }
 
-// Reusable Telegram sender — used by both manual button and auto-send on confirm
-function sendTelegramRaw(orderText, callback) {
-  var cfg = lsGet('settings') || {};
-  if (!cfg.tgBotToken || !cfg.tgChatId) { callback({sent:false, reason:'not-configured'}); return; }
-  fetch('https://api.telegram.org/bot' + cfg.tgBotToken + '/sendMessage', {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify({chat_id: cfg.tgChatId, text: '📦 ออเดอร์ใหม่\n\n' + orderText})
-  })
-  .then(function(r) { return r.json(); })
-  .then(function(d) { callback({sent: !!d.ok, reason: d.ok ? 'ok' : (d.description || 'ส่งไม่สำเร็จ')}); })
-  .catch(function(e) { callback({sent:false, reason: e.message}); });
-}
-
 // Retry from success page if Telegram failed
 function retryTelegramFromSuccess() {
   var lastOrder = getLastPlacedOrder();
@@ -2926,9 +2953,10 @@ function syncOrderToFirebase(ord, isCreate) {
         var lagMs = attemptTs - orderTs;
         var wasUnsynced = !!(lsGet('unsynced_orders')||{})[ord.id];
         clearOrderUnsynced(ord.id);
-        if (wasUnsynced && lagMs > 5*60*1000) {
-          // Send Telegram notification about late-synced order
-          notifyLateSync(ord, lagMs);
+        if (wasUnsynced && ord.notified !== true) {
+          // v3.8.0: order was stuck offline → now in Firebase → send its invoice via Worker
+          // (replaces the old late-sync alert that needed a client-side token and silently failed)
+          sendInvoiceToTelegram(ord, function(ok, info){ console.log('[TG] late-synced order', ord.id, ok ? 'sent' : info); });
         }
         console.log('[FB] Order synced:', ord.id);
         return {ok:true};
@@ -2945,56 +2973,6 @@ function syncOrderToFirebase(ord, isCreate) {
     });
 }
 
-// Notify Tony via Telegram when an order syncs late (was stuck on customer device)
-function notifyLateSync(ord, lagMs) {
-  var cfg = lsGet('settings') || {};
-  if (!cfg.tgBotToken || !cfg.tgChatId) return;
-  var hours = Math.round(lagMs / (60*60*1000));
-  var lagStr = hours >= 24 ? Math.round(hours/24)+' วัน' : hours+' ชั่วโมง';
-  var msg = '🔁 ออเดอร์ค้าง sync เพิ่งเข้ามา\n';
-  msg += '━━━━━━━━━━━━━━\n';
-  msg += '⚠️ ออเดอร์นี้ ลูกค้าสั่งไว้แล้ว ' + lagStr + ' ที่ผ่านมา\n';
-  msg += '   แต่เพิ่ง sync ขึ้น cloud ตอนนี้\n\n';
-  msg += '🏪 สาขา: ' + (ord.branchName||'') + '\n';
-  msg += '📋 Lot #' + (ord.lotNo||'') + '\n';
-  msg += '📅 วันสั่ง: ' + (ord.orderDate||'') + '\n';
-  msg += '📦 วันส่ง: ' + (ord.deliveryDate||'') + '\n';
-  msg += '🥐 จำนวน: ' + (ord.total||0).toLocaleString() + ' ชิ้น\n';
-  msg += '💰 ยอด: ' + (ord.price||0).toLocaleString() + ' บาท';
-  fetch('https://api.telegram.org/bot'+cfg.tgBotToken+'/sendMessage', {
-    method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({ chat_id: cfg.tgChatId, text: msg })
-  }).then(function(r){
-    if (r.ok) console.log('[FB] Late-sync notification sent for', ord.id);
-  }).catch(function(){});
-}
-
-// ─── v3.4.0: ADMIN-SIDE NOTIFICATION DISPATCHER ─────────────────
-// Branch's job: write order to Firebase with notified=false
-// Admin's job: poll Firebase, send Telegram for unnotified orders, mark notified=true
-// This removes branch's dependency on Telegram credentials entirely.
-
-// Track which orders we're currently processing (per-tab in-flight lock)
-var _notifyInFlight = {};
-
-// Patch single order's notified status in Firebase
-function patchOrderNotified(ordId, success, errorMsg) {
-  var ep = fbEndpoint('orders/'+ordId);
-  if (!ep) return Promise.resolve(false);
-  var deviceId = getOrCreateDeviceId();
-  var patch = {
-    notified: success,
-    notifiedAt: success ? Date.now() : null,
-    notifiedBy: success ? deviceId : null,
-    notifyError: success ? null : (errorMsg || '')
-  };
-  return fetch(ep, {
-    method:'PATCH',
-    headers:{'Content-Type':'application/json'},
-    body: JSON.stringify(patch)
-  }).then(function(r){ return r.ok; }).catch(function(){ return false; });
-}
-
 // Generate or get a stable device ID for this browser
 function getOrCreateDeviceId() {
   var did = lsGet('device_id');
@@ -3003,106 +2981,6 @@ function getOrCreateDeviceId() {
     lsSet('device_id', did);
   }
   return did;
-}
-
-// Main dispatcher — called periodically + on admin page open
-function dispatchPendingNotifications() {
-  // Only admin should dispatch (avoid all branches racing to send)
-  if (!APP.adminIn) return;
-
-  // Need Telegram credentials
-  var cfg = lsGet('settings') || {};
-  if (!cfg.tgBotToken || !cfg.tgChatId) {
-    return; // can't notify — no credentials on this device
-  }
-
-  var orders = lsGet('orders') || [];
-  if (!Array.isArray(orders) || orders.length === 0) return;
-
-  // Find candidates: notified=false, not in flight, age < 7 days
-  var now = Date.now();
-  var maxAge = 7 * 24 * 60 * 60 * 1000;
-  var candidates = orders.filter(function(o){
-    if (!o || !o.id) return false;
-    if (o.notified === true) return false;         // already notified
-    if (o.notified === undefined) return false;    // legacy order (pre-v3.4.0) — skip
-    if (_notifyInFlight[o.id]) return false;       // already being processed
-    var orderTs = parseInt(String(o.id||'o0').slice(1), 10) || 0;
-    if (now - orderTs > maxAge) return false;      // too old, skip
-    return true;
-  });
-
-  if (candidates.length === 0) return;
-
-  console.log('[Notify] Dispatching ' + candidates.length + ' pending notification(s)');
-
-  // Process one at a time to avoid Telegram rate limits + race conditions
-  processNotificationQueue(candidates.slice(0, 5)); // cap per cycle
-}
-
-function processNotificationQueue(queue) {
-  if (queue.length === 0) return;
-  var ord = queue.shift();
-  if (_notifyInFlight[ord.id]) {
-    processNotificationQueue(queue);
-    return;
-  }
-  _notifyInFlight[ord.id] = true;
-
-  // STEP 1: Claim this order in Firebase BEFORE sending (prevent double-send across devices)
-  // Strategy: PATCH notified=true optimistically. If we fail to send later → revert.
-  patchOrderNotified(ord.id, true, null).then(function(claimed){
-    if (!claimed) {
-      console.warn('[Notify] Failed to claim order, skipping:', ord.id);
-      delete _notifyInFlight[ord.id];
-      processNotificationQueue(queue);
-      return;
-    }
-
-    // STEP 2: Update local copy too
-    var orders = lsGet('orders') || [];
-    if (Array.isArray(orders)) {
-      for (var i=0; i<orders.length; i++) {
-        if (orders[i].id === ord.id) {
-          orders[i].notified = true;
-          orders[i].notifiedAt = Date.now();
-          orders[i].notifiedBy = getOrCreateDeviceId();
-          break;
-        }
-      }
-      lsSet('orders', orders);
-    }
-
-    // STEP 3: Send Telegram (text + invoice image)
-    sendTelegramRaw(ord.text || formatOrderForTelegram(ord), function(r) {
-      if (r.sent) {
-        // Text sent — try invoice image
-        sendInvoiceToTelegram(ord, function(ok, info){
-          console.log('[Notify] Order ' + ord.id + ' notified ✓ (image: ' + (ok?'ok':'fail') + ')');
-          delete _notifyInFlight[ord.id];
-          processNotificationQueue(queue);
-        });
-      } else {
-        // Text send failed — REVERT claim so another device can retry
-        console.warn('[Notify] Telegram send failed for', ord.id, '-', r.reason);
-        patchOrderNotified(ord.id, false, r.reason);
-        // Revert local
-        var orders2 = lsGet('orders') || [];
-        if (Array.isArray(orders2)) {
-          for (var j=0; j<orders2.length; j++) {
-            if (orders2[j].id === ord.id) {
-              orders2[j].notified = false;
-              orders2[j].notifyAttempts = (orders2[j].notifyAttempts||0) + 1;
-              break;
-            }
-          }
-          lsSet('orders', orders2);
-        }
-        delete _notifyInFlight[ord.id];
-        processNotificationQueue(queue);
-      }
-    });
-  });
 }
 
 // Format fallback text if ord.text was not stored
@@ -3305,10 +3183,11 @@ function loadLoginAudit() {
   fetch(ep, {cache:'no-store'}).then(function(r){ return r.ok ? r.json() : null; }).then(function(data){
     if (!data) return;
     var cutoff = Date.now() - 30*24*60*60*1000;
-    var byDevice = {};
+    var byDevice = {}, fails = {};
     Object.keys(data).forEach(function(k){
       var e = data[k];
       if (!e || !e.deviceId || !e.branchId || e.ts < cutoff) return;
+      if (e.ok === false) { fails[e.deviceId] = (fails[e.deviceId] || 0) + 1; return; }
       if (!byDevice[e.deviceId]) byDevice[e.deviceId] = {};
       byDevice[e.deviceId][e.branchId] = { name: e.branchName || e.branchId, ts: e.ts };
     });
@@ -3320,6 +3199,11 @@ function loadLoginAudit() {
       html += '<strong>เครื่อง ' + escHtml(did.slice(-8)) + '</strong> เข้า ' + ids.length + ' สาขา: ';
       html += ids.map(function(id){ return escHtml(brs[id].name) + ' (' + new Date(brs[id].ts).toLocaleString('th-TH') + ')'; }).join(', ');
       html += '</div>';
+    });
+    Object.keys(fails).forEach(function(did){
+      if (fails[did] < 3) return;
+      html += '<div style="padding:6px 8px;background:#FFF8E1;border-left:3px solid #E08534;border-radius:6px;margin-bottom:4px;font-size:11px;">';
+      html += '🔒 <strong>เครื่อง ' + escHtml(did.slice(-8)) + '</strong> กรอก PIN ผิด ' + fails[did] + ' ครั้ง</div>';
     });
     if (html) {
       content.innerHTML += '<div style="margin-top:12px;padding-top:10px;border-top:1px dashed var(--border);">' +
@@ -3437,7 +3321,20 @@ function deleteOrderFromFirebase(ordId) {
 
 // ─── CONFIG SYNC (admin password, Telegram) ────────────────────
 // Fields that sync across devices via Firebase
-var CONFIG_SYNC_FIELDS = ['adminPassword','tgBotToken','tgChatId'];
+// v3.8.0: Telegram token lives ONLY in Cloudflare Worker secrets — never synced/stored on devices
+var CONFIG_SYNC_FIELDS = ['adminPassword'];
+
+// One-time cleanup: drop legacy token from this device, and (admin) from public Firebase config
+function purgeLegacyTelegramSecrets(alsoCloud) {
+  var c = lsGet('settings') || {};
+  if (c.tgBotToken || c.tgChatId) { delete c.tgBotToken; delete c.tgChatId; lsSet('settings', c); }
+  if (!alsoCloud) return;
+  var ep = fbEndpoint('config');
+  if (!ep) return;
+  fetch(ep, { method:'PATCH', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ tgBotToken: null, tgChatId: null }) })
+    .then(function(r){ if (!r.ok) console.warn('[FB] token purge HTTP', r.status); })
+    .catch(function(e){ console.warn('[FB] token purge failed', e); });
+}
 
 function pushConfigToFirebase() {
   var ep = fbEndpoint('config');
@@ -3568,7 +3465,12 @@ function pullOrdersFromFirebase() {
     }
     // Remote wins for same id (latest data)
     for (var j=0; j<remoteOrds.length; j++) { if(remoteOrds[j].id) map[remoteOrds[j].id] = remoteOrds[j]; }
-    var merged = Object.values(map);
+    // v3.8.0: keep ~13 months on device (bounds localStorage growth); unsynced orders always kept
+    var keepSince = Date.now() - 400*24*60*60*1000;
+    var merged = Object.values(map).filter(function(o){
+      var t = parseInt(String(o.id||'o0').slice(1), 10) || o.ts || 0;
+      return t >= keepSince || unsyncedMap[o.id];
+    });
     merged.sort(function(a,b){ return (b.ts||0)-(a.ts||0); });
     // Count orders dropped due to remote deletion (for log visibility)
     var droppedCount = 0;
@@ -3600,8 +3502,8 @@ function doLoginAdmin() {
   if (pw===(cfg.adminPassword||'admin1234')) {
     APP.adminIn=true; document.getElementById('adm-pw').value='';
     loadAdminDash(); goPage('page-admin');
-    // v3.4.0: Start admin-side notification dispatcher
-    startAdminNotificationLoop();
+    purgeLegacyTelegramSecrets(true);   // v3.8.0: remove token from public Firebase config
+    startAdminNotificationLoop();       // admin refresh loop (pull every 30s, no sending)
   } else { showErr('al-error','รหัสผ่านไม่ถูกต้อง'); }
 }
 function doLogoutAdmin() {
@@ -4250,7 +4152,6 @@ function maybeShowRuleNotice() {
 function loadSettingsPage() {
   var cfg=lsGet('settings')||{};
   var f=function(id,val){ var el=document.getElementById(id); if(el) el.value=val||''; };
-  f('cfg-tg-token', cfg.tgBotToken); f('cfg-tg-chat', cfg.tgChatId);
   f('cfg-fb-url', cfg.fbUrl); f('cfg-fb-secret', cfg.fbSecret);
   var fp=document.getElementById('cfg-fb-path'); if(fp) fp.value=cfg.fbPath||'puffstick';
   loadMediaSettingsUI();
@@ -4376,23 +4277,10 @@ function forcePushBranches() {
       if (el) el.innerHTML = '❌ ' + e.message;
     });
 }
-function saveTgSettings() {
-  var cfg=lsGet('settings')||{};
-  cfg.tgBotToken=document.getElementById('cfg-tg-token').value.trim();
-  cfg.tgChatId=document.getElementById('cfg-tg-chat').value.trim();
-  lsSet('settings',cfg);
-  pushConfigToFirebase(); // sync to all devices
-  alert('✅ บันทึก Telegram แล้ว — sync ไปทุกเครื่องแล้ว');
-}
-function testTelegram() {
-  var cfg=lsGet('settings')||{};
-  if (!cfg.tgBotToken||!cfg.tgChatId) { alert('กรุณากรอก Token และ Chat ID ก่อน'); return; }
-  fetch('https://api.telegram.org/bot'+cfg.tgBotToken+'/sendMessage',{
-    method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({chat_id:cfg.tgChatId,text:'✅ PuffStick Order System เชื่อมต่อสำเร็จ! 🥐'})
-  }).then(function(r){return r.json();}).then(function(d){
-    alert(d.ok?'✅ ส่งสำเร็จ!':'❌ '+d.description);
-  }).catch(function(e){alert('❌ '+e.message);});
+function testWorker() {
+  fetch(WORKER_URL + '/health', {cache:'no-store'})
+    .then(function(r){ alert(r.ok ? '✅ Worker ทำงานปกติ' : '❌ Worker ตอบกลับ HTTP ' + r.status); })
+    .catch(function(e){ alert('❌ เชื่อมต่อ Worker ไม่ได้: ' + (e.message || e)); });
 }
 function saveFbSettings() {
   var cfg=lsGet('settings')||{};

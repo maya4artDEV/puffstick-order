@@ -1,21 +1,22 @@
 # 🤝 SESSION HANDOFF — PuffStick Order System
 
-## ⚡ LATEST (2026-10-13) — read this block first; older notes below are history
+## ⚡ LATEST (2026-10-14) — read this block first; older notes below are history
 
-**Live:** v3.7.0 (main `2f0b956`). Branch `v3.7.1-monthly-report` = next release (not merged).
-**Worker:** v2.2 (Cloudflare version 1b6b94de) — caption >1000 chars → short photo caption + full text via sendMessage.
+**Live:** v3.8.0 (main). **Worker:** v2.2 (Cloudflare version 1b6b94de) — caption >1000 chars → short photo caption + full text via sendMessage. Token only in Worker secrets.
 
 | Version | What |
 |---|---|
 | Worker v2.2 | Fix: Telegram caption limit 1024 → multi-location orders (b05 นครนายก) failed `tg-failed` deterministically |
-| v3.6.1 | Branches cloud-fresh at login/preview/confirm/visibilitychange; field-level `patchBranchCloud` (no whole-object PUT); orders PATCH without notify fields; Telegram sent after FB sync; `saveBlobAs` (share sheet / anchor) for CSV+PNG; Worker resend queue; login audit `branch_health/logins`; version marker only from newer build |
+| v3.6.1 | Branches cloud-fresh at login/preview/confirm/visibilitychange; field-level `patchBranchCloud`; orders PATCH without notify fields; Telegram sent after FB sync; Worker resend queue; login audit `branch_health/logins`; version marker only from newer build |
 | v3.7.0 | Discount rule SSOT `puffstick/discount_rule {type pct|baht, value, minQty, note, ver}`; no node = legacy 10%/4500; orders snapshot `disc` + `discAmt`; in-app notice once per rule ver; acks `branch_health/rule_acks/{ver}/{branchId}` |
-| v3.7.1 | `summarizeMonths()` single aggregator → admin 📊 monthly report (fresh from Firebase), branch monthly history, monthly CSV |
+| v3.7.1 | `summarizeMonths()` → admin 📊 monthly report (fresh from Firebase), branch monthly history, monthly CSV |
+| v3.7.2–3 | ONE save path `saveBlobAs` + `exportTable` (CSV + TSV copy). Mobile export sheet. In-app browsers (WebView: Messenger/LINE/FB — UA `Version/4.0`) cannot save files at all → sheet offers copy + "open in Chrome" |
+| v3.8.0 | Token purge (client never stores/syncs `tgBotToken`; admin login PATCHes `config` to null); legacy token dispatcher + late-sync alert deleted (late-synced orders now send invoice via Worker); T7 branch picker + 5-wrong-PIN 5-min lockout (device remembers branch; wrong PINs logged `ok:false` → Branch Health 🔒); local order cache bounded to ~13 months |
 
-**Decisions (Tony):** discount 1A baht-per-order or % · 2A global rule + per-branch toggle · 3A next order once then reset · 4B single tier · 5A rule change applies immediately · in-app notice only (no push).
-**Deliberately NOT changed (Tony's call):** default PINs `10xx` and Telegram token in Firebase `config` — kept to catch misuse via login audit. Rotate token if strange messages appear.
-**POS/CRM note:** new fields `disc`, `discAmt` on orders; read `price`/`discAmt`, don't recompute `hasDiscount × 0.9`.
-**Open:** b05 had 6 old unnotified orders (Jul–Sep) — clear via Dashboard "ส่งแจ้งเตือนเดี๋ยวนี้" if wanted. Dead code still present: legacy `dispatchPendingNotifications` / token dispatcher (unused since v3.6.1).
+**Decisions (Tony):** discount 1A baht-per-order or % · 2A global rule + per-branch toggle · 3A next order once then reset · 4B single tier · 5A rule change applies immediately · in-app notice only (no push) · default PINs kept for now to catch misuse via audit.
+**Lessons:** jsdom tests prove code paths, NOT that a phone saved a file — for platform behaviour ask for a real-device check + UA. Tony opens admin from Messenger (WebView) unless using the Chrome home-screen icon.
+**POS/CRM:** POS (`puff-pos`) has no Firebase/Telegram usage (checked 2026-10-14). Orders gained `disc`, `discAmt`, `deviceId` — read `price`/`discAmt`, don't recompute `hasDiscount × 0.9`.
+**Open:** Telegram bot token was public in Firebase until v3.8.0 → rotate it in BotFather + Worker secret when convenient. Default PINs `10xx` still in place (Tony's call).
 
 ---
 
