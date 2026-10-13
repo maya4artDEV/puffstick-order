@@ -1,5 +1,24 @@
 # 🤝 SESSION HANDOFF — PuffStick Order System
 
+## ⚡ LATEST (2026-10-13) — read this block first; older notes below are history
+
+**Live:** v3.7.0 (main `2f0b956`). Branch `v3.7.1-monthly-report` = next release (not merged).
+**Worker:** v2.2 (Cloudflare version 1b6b94de) — caption >1000 chars → short photo caption + full text via sendMessage.
+
+| Version | What |
+|---|---|
+| Worker v2.2 | Fix: Telegram caption limit 1024 → multi-location orders (b05 นครนายก) failed `tg-failed` deterministically |
+| v3.6.1 | Branches cloud-fresh at login/preview/confirm/visibilitychange; field-level `patchBranchCloud` (no whole-object PUT); orders PATCH without notify fields; Telegram sent after FB sync; `saveBlobAs` (share sheet / anchor) for CSV+PNG; Worker resend queue; login audit `branch_health/logins`; version marker only from newer build |
+| v3.7.0 | Discount rule SSOT `puffstick/discount_rule {type pct|baht, value, minQty, note, ver}`; no node = legacy 10%/4500; orders snapshot `disc` + `discAmt`; in-app notice once per rule ver; acks `branch_health/rule_acks/{ver}/{branchId}` |
+| v3.7.1 | `summarizeMonths()` single aggregator → admin 📊 monthly report (fresh from Firebase), branch monthly history, monthly CSV |
+
+**Decisions (Tony):** discount 1A baht-per-order or % · 2A global rule + per-branch toggle · 3A next order once then reset · 4B single tier · 5A rule change applies immediately · in-app notice only (no push).
+**Deliberately NOT changed (Tony's call):** default PINs `10xx` and Telegram token in Firebase `config` — kept to catch misuse via login audit. Rotate token if strange messages appear.
+**POS/CRM note:** new fields `disc`, `discAmt` on orders; read `price`/`discAmt`, don't recompute `hasDiscount × 0.9`.
+**Open:** b05 had 6 old unnotified orders (Jul–Sep) — clear via Dashboard "ส่งแจ้งเตือนเดี๋ยวนี้" if wanted. Dead code still present: legacy `dispatchPendingNotifications` / token dispatcher (unused since v3.6.1).
+
+---
+
 > **From:** Claude session 2026-06-19 → 06-21
 > **To:** Next AI instance
 > **Working on:** PuffStick FC Order System (production)
