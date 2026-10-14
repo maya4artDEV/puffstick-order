@@ -198,6 +198,8 @@ textarea.form-input{resize:none;line-height:1.5}
 /* ─── INVOICE TEMPLATE ─── */
 .inv-wrap{position:absolute;left:-9999px;top:0;width:794px;min-height:1123px;box-sizing:border-box;background:#fff;padding:32px 36px;font-family:'Noto Sans Thai','Sarabun',sans-serif;color:#1a1a1a;font-size:12px;line-height:1.4;}
 .inv-wrap.visible{position:relative;left:0;}
+/* v3.8.1: freeze device text scaling during invoice capture — html2canvas re-applies the scaled font-size to its baseline probe (scaled twice) → text drawn below table lines */
+html.inv-capturing{-webkit-text-size-adjust:100%;text-size-adjust:100%;}
 .inv-head{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1.5px solid #333;padding-bottom:10px;margin-bottom:14px;}
 .inv-head-left{flex:1;}
 .inv-co-name{font-size:18px;font-weight:800;color:#1a1a1a;margin-bottom:4px;}
@@ -878,8 +880,8 @@ var FILLINGS = [
   {id:'choc',   name:'ช็อกโกแลต',      emoji:'🍫'}
 ];
 
-var APP_VERSION = '3.8.0';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
-var APP_BUILD   = '2026.10.14-hardening';  // วันที่ deploy
+var APP_VERSION = '3.8.1';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
+var APP_BUILD   = '2026.10.14-invoice-textscale';  // วันที่ deploy
 
 var PRICE_PER_PC = 20;
 var DISC_THRESH  = 4500;
@@ -1619,23 +1621,22 @@ function aggregateOrderItems(ord) {
 function renderInvoiceToCanvas(ord, callback) {
   var tplEl = document.getElementById('invoice-template');
   if (!tplEl) { callback('Template element missing'); return; }
+  var rootEl = document.documentElement;
+  // ONE exit path: always restore template + text scaling
+  function finish(err, canvas) {
+    tplEl.classList.remove('visible');
+    rootEl.classList.remove('inv-capturing');
+    callback(err, canvas);
+  }
   tplEl.innerHTML = renderInvoiceTemplate(ord);
+  rootEl.classList.add('inv-capturing');
   tplEl.classList.add('visible');
   // Allow fonts/layout to settle
   setTimeout(function(){
-    if (typeof html2canvas !== 'function') {
-      tplEl.classList.remove('visible');
-      callback('html2canvas not loaded'); return;
-    }
+    if (typeof html2canvas !== 'function') { finish('html2canvas not loaded'); return; }
     html2canvas(tplEl, { scale: 2, backgroundColor: '#fff', useCORS: true, logging: false })
-      .then(function(canvas){
-        tplEl.classList.remove('visible');
-        callback(null, canvas);
-      })
-      .catch(function(err){
-        tplEl.classList.remove('visible');
-        callback(err.message || 'render failed');
-      });
+      .then(function(canvas){ finish(null, canvas); })
+      .catch(function(err){ finish(err.message || 'render failed'); });
   }, 150);
 }
 
