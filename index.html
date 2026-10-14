@@ -880,8 +880,8 @@ var FILLINGS = [
   {id:'choc',   name:'ช็อกโกแลต',      emoji:'🍫'}
 ];
 
-var APP_VERSION = '3.8.1';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
-var APP_BUILD   = '2026.10.14-invoice-textscale';  // วันที่ deploy
+var APP_VERSION = '3.8.2';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
+var APP_BUILD   = '2026.10.14-autoupdate';  // วันที่ deploy
 
 var PRICE_PER_PC = 20;
 var DISC_THRESH  = 4500;
@@ -1143,7 +1143,9 @@ function initApp() {
   // Version sync — notify other devices about latest version
   pushVersionToFirebase();
   // Check if there's a newer version somewhere → show banner
-  setTimeout(checkVersionFromFirebase, 1500);
+  setTimeout(checkVersionThrottled, 1500);
+  // v3.8.2: branch PWAs stay open for days → keep checking while open
+  setInterval(checkVersionThrottled, AUTO_UPD_CHECK_MS);
   // Retry any orders that failed to sync previously
   setTimeout(retryUnsyncedOrders, 2500);
   // v3.4.3: Send health ping (every 5 min while app open) so Tony sees who's alive
@@ -1984,6 +1986,7 @@ function goPage(id) {
   for (var i = 0; i < pages.length; i++) { pages[i].classList.remove('active'); }
   var el = document.getElementById(id);
   if (el) { el.classList.add('active'); window.scrollTo(0,0); }
+  if (APP.pendingUpdateVer) maybeAutoUpdate();   // v3.8.2: deferred update lands on the next safe page
 }
 
 // ============================================================
@@ -1998,7 +2001,11 @@ function localISODate(d) { return d.getFullYear()+'-'+padZ(d.getMonth()+1)+'-'+p
 // Solves PWA / Add-to-Home-Screen showing stale HTML on mobile.
 function forceReload() {
   if (!confirm('🔄 อัปเดตเวอร์ชันใหม่?\n\nระบบจะล้าง cache และโหลดใหม่จาก server\nออเดอร์/ข้อมูลของคุณไม่หาย')) return;
+  reloadFromServer();
+}
 
+// v3.8.2: ONE reload path — manual (forceReload) and automatic (maybeAutoUpdate)
+function reloadFromServer() {
   // Try to clear service worker caches (just in case)
   if (window.caches && caches.keys) {
     caches.keys().then(function(names){
@@ -2847,6 +2854,10 @@ function confirmOrderNow(ord) {
     tgStatusEl.className = 'alert alert-info';
     tgStatusEl.innerHTML = '⏳ กำลังสร้างใบส่งของและแจ้งเตือนผู้ประสานงาน...';
   }
+  // v3.8.2: block auto-update reload until FB save + Telegram finish (a reload mid-PATCH could drop the order)
+  APP.orderInFlight = true;
+  // (no reload here — branch must see the ✅ result; the next foreground/interval check picks it up)
+  function sendDone() { APP.orderInFlight = false; }
   syncOrderToFirebase(ord, true).then(function(res){
     if (fbStatusEl) {
       if (res.ok) {
@@ -2857,13 +2868,14 @@ function confirmOrderNow(ord) {
         fbStatusEl.innerHTML = '⚠️ บันทึกไม่สำเร็จ ('+res.reason+') — จะลองใหม่อัตโนมัติเมื่อกลับมาเปิดแอป';
       }
     }
-    if (!tgStatusEl) return;
+    if (!tgStatusEl) { sendDone(); return; }
     if (!res.ok) {
       tgStatusEl.className = 'alert alert-danger';
       tgStatusEl.innerHTML = '⚠️ ยังส่งแจ้งเตือนไม่ได้ (ออเดอร์ยังไม่ขึ้นระบบ) — ผู้ประสานงานจะส่งให้จากหน้าประวัติออเดอร์';
-      return;
+      sendDone(); return;
     }
     sendInvoiceToTelegram(ord, function(ok, info) {
+      sendDone();
       if (ok) {
         tgStatusEl.className = 'alert alert-success';
         tgStatusEl.innerHTML = '✅ ส่งแจ้งเตือนผู้ประสานงานสำเร็จ — รับออเดอร์ของคุณแล้ว';
@@ -3408,9 +3420,63 @@ function checkVersionFromFirebase() {
     if (!data || !data.version) return;
     // Compare semver-like strings
     if (compareVersion(data.version, APP_VERSION) > 0) {
-      showUpdateBanner(data.version);
+      APP.pendingUpdateVer = data.version;
+      maybeAutoUpdate();
     }
   }).catch(function(e){ console.warn('[FB] Version check failed:', e); });
+}
+
+// ─── AUTO UPDATE (v3.8.2) ───────────────────────────────────────
+// SSOT = Firebase 'version' marker (written by pushVersionToFirebase from the newest build).
+// Branch devices reload themselves at a safe moment — no tap. Admin keeps the banner.
+var AUTO_UPD_CHECK_MS = 5*60*1000;    // re-check marker at most every 5 min
+var AUTO_UPD_RETRY_MS = 10*60*1000;   // GitHub Pages caches HTML ~10 min → never reload twice for one version inside this window
+
+function checkVersionThrottled() {
+  if (Date.now() - (APP.lastVerCheck || 0) < AUTO_UPD_CHECK_MS) { if (APP.pendingUpdateVer) maybeAutoUpdate(); return; }
+  APP.lastVerCheck = Date.now();
+  checkVersionFromFirebase();
+}
+
+// Safe = nothing typed/in flight would be lost. A reload returns to the landing page (branch re-enters PIN — Tony's call).
+function isSafeToAutoReload() {
+  if (APP.adminIn || APP.confirming || APP.orderInFlight) return false;
+  if (document.documentElement.classList.contains('inv-capturing')) return false;
+  var p = document.querySelector('.page.active'); var id = p ? p.id : '';
+  if (id === 'page-preview' || id === 'page-success' || id.indexOf('page-adm') === 0) return false;
+  if (id === 'page-branch-login') {   // don't wipe a PIN being typed
+    var digits = p.querySelectorAll('.pin-digit');
+    for (var i = 0; i < digits.length; i++) { if (digits[i].value) return false; }
+  }
+  if (id === 'page-order') {
+    try {
+      var notes = document.getElementById('o-notes');
+      return calcTotal() === 0 && !(notes && notes.value.trim());
+    } catch(e) { return false; }
+  }
+  return true;
+}
+
+function maybeAutoUpdate() {
+  var ver = APP.pendingUpdateVer;
+  if (!ver || compareVersion(ver, APP_VERSION) <= 0) return;
+  if (APP.adminIn) { showUpdateBanner(ver); return; }
+  if (!isSafeToAutoReload()) return;   // retried on next goPage / foreground / interval
+  var last = lsGet('autoupd') || {};
+  if (last.ver === ver && Date.now() - (last.ts || 0) < AUTO_UPD_RETRY_MS) return;   // reload got stale cached HTML → wait, retry after window (no loop)
+  if (document.getElementById('autoupd-toast')) return;
+  var t = document.createElement('div');
+  t.id = 'autoupd-toast';
+  t.style.cssText = 'position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:9999;background:#2C5871;color:#fff;padding:10px 16px;border-radius:10px;font-size:14px;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,.25);';
+  t.textContent = '🔄 กำลังอัปเดตเป็น v' + ver + '…';
+  document.body.appendChild(t);
+  setTimeout(function(){
+    // re-check: staff may have started typing during the toast
+    if (!isSafeToAutoReload()) { t.remove(); return; }
+    // loop guard must persist, else a full storage could reload forever → banner instead
+    if (!lsSet('autoupd', { ver: ver, ts: Date.now() })) { t.remove(); showUpdateBanner(ver); return; }
+    reloadFromServer();
+  }, 1200);
 }
 
 function compareVersion(a, b) {
@@ -4343,7 +4409,9 @@ document.addEventListener('DOMContentLoaded', function(){ initApp(); });
 // v3.6.1: app returning to foreground (PWA is rarely closed) → refresh branch data
 // so a discount toggled by admin shows up without restarting the app
 document.addEventListener('visibilitychange', function(){
-  if (document.visibilityState !== 'visible' || !APP.branch) return;
+  if (document.visibilityState !== 'visible') return;
+  checkVersionThrottled();   // v3.8.2: app back in foreground → maybe auto-update
+  if (!APP.branch) return;
   var op = document.getElementById('page-order');
   if (!op || !op.classList.contains('active')) return;
   refreshBranches(function(){
