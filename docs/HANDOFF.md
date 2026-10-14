@@ -2,7 +2,7 @@
 
 ## ⚡ LATEST (2026-10-14) — read this block first; older notes below are history
 
-**Live:** v3.8.0 (main). **Worker:** v2.2 (Cloudflare version 1b6b94de) — caption >1000 chars → short photo caption + full text via sendMessage. Token only in Worker secrets.
+**Live:** v3.8.2 (main, `97bcd00`). **Worker:** v2.2 (Cloudflare version 1b6b94de) — caption >1000 chars → short photo caption + full text via sendMessage. Token only in Worker secrets.
 
 | Version | What |
 |---|---|
@@ -12,11 +12,14 @@
 | v3.7.1 | `summarizeMonths()` → admin 📊 monthly report (fresh from Firebase), branch monthly history, monthly CSV |
 | v3.7.2–3 | ONE save path `saveBlobAs` + `exportTable` (CSV + TSV copy). Mobile export sheet. In-app browsers (WebView: Messenger/LINE/FB — UA `Version/4.0`) cannot save files at all → sheet offers copy + "open in Chrome" |
 | v3.8.0 | Token purge (client never stores/syncs `tgBotToken`; admin login PATCHes `config` to null); legacy token dispatcher + late-sync alert deleted (late-synced orders now send invoice via Worker); T7 branch picker + 5-wrong-PIN 5-min lockout (device remembers branch; wrong PINs logged `ok:false` → Branch Health 🔒); local order cache bounded to ~13 months |
+| v3.8.1 | Invoice PNG text drawn below table lines on phones with large text (Android font scale / in-app WebView): html2canvas `FontMetrics` copies the already-scaled computed font-size into its baseline probe → scaled twice. Fix: `html.inv-capturing {text-size-adjust:100%}` only during capture; `renderInvoiceToCanvas` has ONE `finish()` exit |
+| v3.8.2 | Branch auto-update, no tap. SSOT = Firebase `version` marker. Check on boot + foreground (`visibilitychange`) + every 5 min (`checkVersionThrottled`). `maybeAutoUpdate` reloads only when `isSafeToAutoReload`: landing / PIN empty / history / order page with 0 qty + no notes. Waits on qty, preview, success, `APP.orderInFlight` (FB save + Telegram), PIN typing; deferred update fires from `goPage`. 10-min loop guard `ps_autoupd`. Admin keeps banner. ONE reload path `reloadFromServer` (manual `forceReload` = confirm + same). Reload → landing, branch re-enters PIN (Tony chose B) |
 
 **Decisions (Tony):** discount 1A baht-per-order or % · 2A global rule + per-branch toggle · 3A next order once then reset · 4B single tier · 5A rule change applies immediately · in-app notice only (no push) · default PINs kept for now to catch misuse via audit.
-**Lessons:** jsdom tests prove code paths, NOT that a phone saved a file — for platform behaviour ask for a real-device check + UA. Tony opens admin from Messenger (WebView) unless using the Chrome home-screen icon.
+**Deploy step (v3.8.2+):** after every push, Tony opens the app once on his phone → new build writes the `version` marker → branches auto-update. Devices still on ≤3.8.1 get the old banner one last time.
+**Lessons:** html2canvas + device text scaling = mismatched glyph baseline; desktop Chromium cannot emulate Android font scale → real-device check required. Deliverable files are named `<repo>_vX.Y.Z.html` (PuffStick + Pippa both shipped `index.html` into Downloads; a Pippa block pasted in this repo was stopped only by its precheck); every PowerShell block starts with `Set-Location` to its own repo. jsdom tests prove code paths, NOT that a phone saved a file — for platform behaviour ask for a real-device check + UA. Tony opens admin from Messenger (WebView) unless using the Chrome home-screen icon.
 **POS/CRM:** POS (`puff-pos`) has no Firebase/Telegram usage (checked 2026-10-14). Orders gained `disc`, `discAmt`, `deviceId` — read `price`/`discAmt`, don't recompute `hasDiscount × 0.9`.
-**Open:** Telegram bot token was public in Firebase until v3.8.0 → rotate it in BotFather + Worker secret when convenient. Default PINs `10xx` still in place (Tony's call).
+**Open:** v3.8.1 real-device test (Android font size max → test order → Telegram PNG). Resend clean PNG for คลอง 5 Lot 29 (admin 📤) once fixed build is on the sending device. Telegram bot token was public in Firebase until v3.8.0 → rotate it in BotFather + Worker secret when convenient. Default PINs `10xx` still in place (Tony's call).
 
 ---
 
