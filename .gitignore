@@ -5,3 +5,6 @@ puff-stick-fc-order-*.json
 .dev.vars
 *token*
 _archive/
+*firebase-adminsdk*.json
+*service-account*.json
+_secrets/
