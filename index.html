@@ -880,8 +880,8 @@ var FILLINGS = [
   {id:'choc',   name:'ช็อกโกแลต',      emoji:'🍫'}
 ];
 
-var APP_VERSION = '3.8.2';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
-var APP_BUILD   = '2026.10.14-autoupdate';  // วันที่ deploy
+var APP_VERSION = '3.8.3';  // bump เมื่อ deploy ใหม่ — แสดงในแอป
+var APP_BUILD   = '2026.10.15-lotrollback';  // วันที่ deploy
 
 var PRICE_PER_PC = 20;
 var DISC_THRESH  = 4500;
@@ -3327,9 +3327,39 @@ function retryUnsyncedOrders() {
   }
 }
 
+// v3.8.3: resolves true only when the cloud delete really succeeded (P-01)
 function deleteOrderFromFirebase(ordId) {
-  var ep=fbEndpoint('orders/'+ordId); if (!ep) return;
-  fetch(ep, {method:'DELETE'}).catch(function(e){ console.warn('[FB] Order deletion failed:', e); });
+  var ep=fbEndpoint('orders/'+ordId); if (!ep) return Promise.resolve(false);
+  return fetch(ep, {method:'DELETE'}).then(function(r){
+    if (!r.ok) console.warn('[FB] Order deletion HTTP', r.status);
+    return r.ok;
+  }).catch(function(e){ console.warn('[FB] Order deletion failed:', e); return false; });
+}
+
+// v3.8.3 lot rollback (SECURITY_PLAN_C §6): deleting a branch's LATEST lot frees
+// its number for the next order. Decided on the FRESH cloud currentLot — the admin
+// cache can be stale if the branch ordered meanwhile. A middle lot leaves a gap
+// (issued invoices are never renumbered). Resolves the new lot, or 0 = no rollback.
+function rollbackLotIfLatest(o) {
+  var lot = parseInt(o.lotNo, 10);
+  var ep = fbEndpoint('branches_v2/_payload/' + o.branchId + '/currentLot');
+  if (!ep || !o.branchId || !(lot >= 1)) return Promise.resolve(0);
+  return fetch(ep, {cache:'no-store'}).then(function(r){
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(function(cloudLot){
+    if (parseInt(cloudLot, 10) !== lot + 1) return 0;          // not the latest lot
+    var orders = lsGet('orders') || [];
+    for (var i=0; i<orders.length; i++) {                       // same lot still issued (duplicate)
+      if (orders[i].branchId === o.branchId && parseInt(orders[i].lotNo, 10) === lot) return 0;
+    }
+    return patchBranchCloud(o.branchId, {currentLot: lot}).then(function(ok){
+      if (!ok) return 0;
+      var bs = lsGet('branches') || {};
+      if (bs[o.branchId]) { bs[o.branchId].currentLot = lot; lsSet('branches', bs); }
+      return lot;
+    });
+  }).catch(function(e){ console.warn('[FB] lot rollback skipped', e); return 0; });
 }
 
 // ─── CONFIG SYNC (admin password, Telegram) ────────────────────
@@ -3874,12 +3904,21 @@ function deleteOrder() {
   for (var i=0; i<orders.length; i++) { if(orders[i].id===APP.viewOrdId){o=orders[i];break;} }
   if (!o) return;
   var label = o.branchName + ' Lot #' + o.lotNo + ' (' + o.total + ' ชิ้น · ' + o.deliveryDate + ')';
-  if (!confirm('🗑 ลบออเดอร์นี้?\n\n' + label + '\n\nไม่สามารถย้อนกลับได้')) return;
+  if (!confirm('🗑 ลบออเดอร์นี้?\n\n' + label + '\n\nถ้าเป็น Lot ล่าสุดของสาขา ออเดอร์ถัดไปจะใช้เลข Lot นี้แทน\nไม่สามารถย้อนกลับได้')) return;
   // Remove from local
   var newOrds = orders.filter(function(x){ return x.id !== APP.viewOrdId; });
   lsSet('orders', newOrds);
-  // Remove from Firebase
-  deleteOrderFromFirebase(APP.viewOrdId);
+  // Remove from Firebase — v3.8.3: roll the lot back only after the cloud delete succeeded
+  deleteOrderFromFirebase(APP.viewOrdId).then(function(ok){
+    if (!ok) { alert('⚠️ ลบออเดอร์บน cloud ไม่สำเร็จ — เลข Lot ไม่ถูกย้อน\nกรุณาลองลบใหม่เมื่อออนไลน์'); return; }
+    return rollbackLotIfLatest(o).then(function(newLot){
+      if (!newLot) return;
+      alert('↩️ ' + o.branchName + ': เลข Lot ย้อนเป็น #' + newLot + ' — ออเดอร์ถัดไปจะใช้ #' + newLot);
+      loadAdminDash();
+      var admPage = document.getElementById('page-adm-branches');
+      if (admPage && admPage.classList.contains('active')) loadBranches();
+    });
+  });
   closeModal('modal-ord');
   loadHistory();
   loadAdminDash();
