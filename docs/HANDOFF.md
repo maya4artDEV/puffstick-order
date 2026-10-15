@@ -1,8 +1,13 @@
 # 🤝 SESSION HANDOFF — PuffStick Order System
 
-## ⚡ LATEST (2026-10-14) — read this block first; older notes below are history
+## ⚡ LATEST (2026-10-16) — read this block first; older notes below are history
 
-**Live:** v3.8.2 (main, `97bcd00`). **Worker:** v2.2 (Cloudflare version 1b6b94de) — caption >1000 chars → short photo caption + full text via sendMessage. Token only in Worker secrets.
+**Live:** v3.8.3 (main) — lot rollback verified on a real device. **Prod Worker:** still v2.2 code (repo `worker/index.js` is already v3.0 = NOT deployed to prod yet). **Staging Worker:** `puffstick-telegram-notifier-staging` = v3.0, 14/14 real-endpoint tests PASS.
+**Telegram token rotated 2026-10-15** (leak confirmed: foreign webhook `tele.goldenherd.com`; now cleared). New token only in Worker secrets.
+**Next:** SECURITY_PLAN_C Phase 1 prod cutover → see Project doc `claude/SECURITY_PLAN_C.md` + `claude/NEXT_SESSION_prod_cutover.md`. PowerShell block rules: AI_LOCK §6 v2.1.
+
+---
+*(2026-10-14 notes)* **Live was:** v3.8.2 (`97bcd00`). **Worker:** v2.2 (Cloudflare version 1b6b94de) — caption >1000 chars → short photo caption + full text via sendMessage.
 
 | Version | What |
 |---|---|
@@ -20,7 +25,7 @@
 **Deploy step (v3.8.2+):** after every push, Tony opens the app once on his phone → new build writes the `version` marker → branches auto-update. Devices still on ≤3.8.1 get the old banner one last time.
 **Lessons:** html2canvas + device text scaling = mismatched glyph baseline; desktop Chromium cannot emulate Android font scale → real-device check required. Deliverable files are named `<repo>_vX.Y.Z.html` (PuffStick + Pippa both shipped `index.html` into Downloads; a Pippa block pasted in this repo was stopped only by its precheck); every PowerShell block starts with `Set-Location` to its own repo. jsdom tests prove code paths, NOT that a phone saved a file — for platform behaviour ask for a real-device check + UA. Tony opens admin from Messenger (WebView) unless using the Chrome home-screen icon.
 **POS/CRM:** POS (`puff-pos`) has no Firebase/Telegram usage (checked 2026-10-14). Orders gained `disc`, `discAmt`, `deviceId` — read `price`/`discAmt`, don't recompute `hasDiscount × 0.9`.
-**Open:** v3.8.1 real-device test (Android font size max → test order → Telegram PNG). Resend clean PNG for คลอง 5 Lot 29 (admin 📤) once fixed build is on the sending device. Telegram bot token was public in Firebase until v3.8.0 → rotate it in BotFather + Worker secret when convenient. Default PINs `10xx` still in place (Tony's call).
+**Open:** v3.8.1 real-device test (Android font size max → test order → Telegram PNG). Resend clean PNG for คลอง 5 Lot 29 (admin 📤) once fixed build is on the sending device. ~~Telegram bot token was public in Firebase until v3.8.0 → rotate~~ ✅ rotated 2026-10-15. Default PINs `10xx` still in place (Tony's call).
 
 ---
 

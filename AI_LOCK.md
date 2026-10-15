@@ -1,7 +1,7 @@
 # 🔒 AI_LOCK.md — PuffStick FC Order System
 
-> **Version:** 2.0
-> **Last updated:** 2026-06-21
+> **Version:** 2.1
+> **Last updated:** 2026-10-16 (§6 PowerShell block rules + incident 2026-10-15)
 > **Status:** PRODUCTION LIVE — 20 สาขาใช้งานจริง
 > **Repo:** https://github.com/maya4artDEV/puffstick-order
 > **Live:** https://maya4artdev.github.io/puffstick-order/
@@ -20,6 +20,19 @@
 ---
 
 ## 0. CRITICAL INCIDENT LOG
+
+### 2026-10-15/16: v3.8.3 "not live" + leaked Telegram token — 5 PowerShell-block mistakes ของ AI
+
+**Incident:** Tony ทดสอบ lot rollback แล้ว "ไม่ถอย" → จริงๆ v3.8.3 ยังไม่ถูก push (live = v3.8.2). ระหว่าง setup Worker staging เจอ webhook แปลกปลอม `tele.goldenherd.com` บนบอท → token หลุด (เคย public ใน Firebase ถึง v3.8.0) → revoke + rotate.
+
+**Mistakes ที่ AI ทำ (ทั้งหมดอยู่ใน PowerShell block ไม่ใช่ใน app) — ห้ามทำซ้ำ:**
+1. ❌ Block ไม่ห่อ `& { }` → paste ทีละบรรทัด, `throw` ไม่หยุด block, `Read-Host` กินบรรทัดว่าง → push ไม่เกิดแต่ดูเหมือนรันจบ
+2. ❌ ข้อความ console เป็นภาษาไทย → console ของ Tony แสดงเป็น □ อ่านคำสั่งไม่ออก
+3. ❌ แอบใส่ค่าลง clipboard + ให้ copy ชื่อจากหน้าจอใน prompt เดียวกัน → ค่าใน clipboard หาย, Worker ได้ชื่อผิด (`exactly…`)
+4. ❌ ตั้งชื่อ function `Var` (คำสงวน PS7) → ParserError
+5. ❌ `$r` กับ `$R` = ตัวแปรเดียวกัน (PowerShell ไม่สนตัวพิมพ์) → list ผลทดสอบถูกเขียนทับ
+6. ❌ Token rotate: revoke ก่อน แล้วค่อยคิดเรื่อง Worker secret → ช่วงนั้นทุกสาขาส่ง Telegram ไม่ได้
+→ **Fix:** §6 "PowerShell blocks" checklist (ข้อ 1–5) + P-07: อัปเดต Worker secret ทันทีหลัง `/revoke` (ข้อ 6)
 
 ### 2026-06-19/21: "PNG หายจาก Telegram" — 6 investigation mistakes ของ AI
 
@@ -171,7 +184,7 @@ Worker (Cloudflare):
 | **P-04** | Timestamp dual — orderDate (lock) + syncedAt | ทุก order create |
 | **P-05** | ts sync — update local _ts หลัง push สำเร็จ | ทุก config push |
 | **P-06** | Reload to sync — admin มีปุ่ม Force Reload | shared config changes |
-| **P-07** | Credential rotation procedure | bot token / passwords |
+| **P-07** | Credential rotation procedure — Telegram: `/revoke` → ใส่ token ใหม่ใน Worker secret **ทันที** → `getWebhookInfo` ต้องว่าง → test order | bot token / passwords |
 | **P-08** | Version + no-cache + auto-update banner | ทุก deploy |
 | **P-09** | Background sync limit — web app ทำไม่ได้ | ใช้ retry on next open |
 | **P-10** | Firebase Rules whitelist path explicitly | ก่อน deploy app ใหม่ |
@@ -200,6 +213,23 @@ Worker (Cloudflare):
 ☐ ถ้า rollback/restore: diff function list + md5sum ก่อน push
 ☐ Diff size < 100 lines หรือเป็น pure deletion ของ dead code?
 ☐ JS syntax check ผ่าน (node --check)
+```
+
+### PowerShell blocks ที่ส่งให้ Tony รัน (v2.1 — จาก incident 2026-10-15)
+
+```
+☐ ห่อทั้ง block ด้วย & { ... }  → paste เป็นก้อนเดียว, throw หยุดทั้ง block จริง
+☐ บรรทัดแรก Set-Location -LiteralPath '<repo path จริง>'  (D:\##PROJECT##\#1 92 KUMIMP\HTML\Anti IDE Project\puffstick-order)
+☐ ทุกข้อความที่ print / Read-Host = ภาษาอังกฤษ  (console แสดงไทยเป็น □) — comment ไทยได้
+☐ Read-Host ที่ใช้ยืนยัน: ไม่สนตัวพิมพ์ (-ne ไม่ใช่ -cne) และบอกคำที่ต้องพิมพ์ชัดๆ
+☐ Clipboard: 1 ค่าต่อ 1 step (รวม "ชื่อ" ด้วย) + พิมพ์ "CLIPBOARD NOW HOLDS: <what> (<n> chars)"
+  + กด c = copy ซ้ำ + ห้ามมีข้อความให้ copy จากหน้าจอใน step เดียวกัน
+☐ ห้ามใช้ชื่อตัวแปรที่ต่างกันแค่ตัวพิมพ์ ($r / $R) — PowerShell case-insensitive
+☐ ห้ามตั้งชื่อ function เป็นคำสงวน (var, class, enum, using ...) — ใช้ Verb-Noun เช่น Add-CfVar
+☐ Secret / token: Read-Host -AsSecureString, ไม่ print, ล้าง clipboard + ตัวแปรท้าย block
+☐ บอก "expected output" ก่อน และ block จบด้วย verify ของจริง (hash / live poll / /health)
+☐ ทดสอบก่อนส่ง: pwsh parser 0 error  **และ** รันจริงกับ harness (mock server/endpoint) — parser อย่างเดียวไม่พอ
+☐ ทุกขั้นที่แตะ Cloudflare: block ต้องเช็คว่า PROD Worker ยังไม่เปลี่ยน (prod /health) ก่อนจบ
 ```
 
 ---
