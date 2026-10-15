@@ -2,9 +2,11 @@
 
 ## ⚡ LATEST (2026-10-16) — read this block first; older notes below are history
 
-**Live:** v3.8.3 (main) — lot rollback verified on a real device. **Prod Worker:** still v2.2 code (repo `worker/index.js` is already v3.0 = NOT deployed to prod yet). **Staging Worker:** `puffstick-telegram-notifier-staging` = v3.0, 14/14 real-endpoint tests PASS.
+**Live:** v3.8.3 (main) — lot rollback verified on a real device. **Prod Worker: v3.0 LIVE since 2026-10-16 01:30** (Cloudflare version `c256f701`; rollback target = `a3f7a0ae` = v2.2 code + all 6 secrets). **Staging Worker:** `puffstick-telegram-notifier-staging` = v3.0.
+**Phase 1 prod cutover (SECURITY_PLAN_C) — 7/8 PASS:** /health v=3.0 · `/send-order` unknown order → 404 (SA OAuth reads prod RTDB) · `/resend` tokenless → 403 · `/auth/admin` new password → token signed by the prod SA · real test order → Telegram PNG + notified · admin resend → PNG. Check 05 `/auth/branch` (TEST branch) was skipped → run it before Phase 2 uses the endpoint.
+**Prod Worker secrets (6):** TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID, FIREBASE_URL, FIREBASE_PATH, FIREBASE_SA_JSON (prod SA key `firebase-adminsdk-fbsvc@puff-stick-fc-order`), ADMIN_PASSWORD (NEW 2026-10-16, also in Tony's user env `PS_PROD_ADMIN_PW`; the old public `config.adminPassword` is NOT the server password). No local copy of the prod SA key is kept — if the secret is ever lost, generate a new key. **Do not delete that key in Firebase/Google Cloud** (the Worker uses it).
 **Telegram token rotated 2026-10-15** (leak confirmed: foreign webhook `tele.goldenherd.com`; now cleared). New token only in Worker secrets.
-**Next:** SECURITY_PLAN_C Phase 1 prod cutover → see Project doc `claude/SECURITY_PLAN_C.md` + `claude/NEXT_SESSION_prod_cutover.md`. PowerShell block rules: AI_LOCK §6 v2.1.
+**Next:** SECURITY_PLAN_C Phase 2 (app v3.9.0 auth module) → Project doc `claude/SECURITY_PLAN_C.md`. The app has no Firebase web API key yet (index.html uses RTDB REST only) — Phase 2 needs the prod web API key for `signInWithCustomToken` (check Firebase → Project settings → Your apps). PowerShell block rules: AI_LOCK §6 v2.2.
 
 ---
 *(2026-10-14 notes)* **Live was:** v3.8.2 (`97bcd00`). **Worker:** v2.2 (Cloudflare version 1b6b94de) — caption >1000 chars → short photo caption + full text via sendMessage.

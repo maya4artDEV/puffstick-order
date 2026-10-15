@@ -215,7 +215,7 @@ Worker (Cloudflare):
 ☐ JS syntax check ผ่าน (node --check)
 ```
 
-### PowerShell blocks ที่ส่งให้ Tony รัน (v2.1 — จาก incident 2026-10-15)
+### PowerShell blocks ที่ส่งให้ Tony รัน (v2.2 — จาก incident 2026-10-15 + cutover 2026-10-16)
 
 ```
 ☐ ห่อทั้ง block ด้วย & { ... }  → paste เป็นก้อนเดียว, throw หยุดทั้ง block จริง
@@ -230,6 +230,8 @@ Worker (Cloudflare):
 ☐ บอก "expected output" ก่อน และ block จบด้วย verify ของจริง (hash / live poll / /health)
 ☐ ทดสอบก่อนส่ง: pwsh parser 0 error  **และ** รันจริงกับ harness (mock server/endpoint) — parser อย่างเดียวไม่พอ
 ☐ ทุกขั้นที่แตะ Cloudflare: block ต้องเช็คว่า PROD Worker ยังไม่เปลี่ยน (prod /health) ก่อนจบ
+☐ multipart (FormData) จาก PowerShell = curl.exe -F เท่านั้น — Invoke-WebRequest -Form ใส่ name ไม่มี quote (ไม่เหมือน browser)
+☐ ไฟล์ที่ผู้ใช้ download (key/credential): validate ก่อนย้ายเข้าที่เก็บ — ไฟล์ผิดต้องไม่ค้างในตำแหน่งที่ block รอบหน้าจะ reuse
 ```
 
 ---
